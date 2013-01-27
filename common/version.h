@@ -19,43 +19,12 @@
  *   OCLToys website: http://code.google.com/p/ocltoys                     *
  ***************************************************************************/
 
-#ifndef UTILS_H
-#define	UTILS_H
+#ifndef _OCLTOYS_CFG_H
+#define	_OCLTOYS_CFG_H
 
-#include "opencl.h"
+// The configured options and settings for OCLToys
 
-#include <string>
-#if defined(__linux__) || defined(__APPLE__) || defined(__CYGWIN__) || defined(__OpenBSD__) || defined(__FreeBSD__)
-#include <stddef.h>
-#include <sys/time.h>
-#elif defined (WIN32)
-#include <windows.h>
-#else
-#error "Unsupported Platform !!!"
-#endif
+#define OCLTOYS_VERSION_MAJOR "1"
+#define OCLTOYS_VERSION_MINOR "0devel1"
 
-#ifdef __MACOSX
-#include <GLut/glut.h>
-#else
-#include <GL/glut.h>
-#endif
-
-extern std::string OCLErrorString(cl_int error);
-
-inline double WallClockTime() {
-#if defined(__linux__) || defined(__APPLE__) || defined(__CYGWIN__) || defined(__OpenBSD__) || defined(__FreeBSD__)
-	struct timeval t;
-	gettimeofday(&t, NULL);
-
-	return t.tv_sec + t.tv_usec / 1000000.0;
-#elif defined (WIN32)
-	return GetTickCount() / 1000.0;
-#else
-#error "Unsupported Platform !!!"
-#endif
-}
-
-extern void PrintString(void *font, const std::string &str);
-
-#endif	/* UTILS_H */
-
+#endif	/* _OCLTOYS_CFG_H */

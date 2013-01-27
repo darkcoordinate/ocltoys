@@ -41,9 +41,7 @@ extern float offsetY;
 extern int maxIterations;
 extern unsigned int *pixels;
 extern char captionBuffer[256];
-extern int amiMandelCPU;
 
-extern void InitGlut(int argc, char *argv[], char *windowTittle);
 extern double WallClockTime();
 
 #endif	/* _DISPLAYFUNC_H */

@@ -1,37 +1,33 @@
-/*
-Copyright (c) 2009 David Bucciarelli (davibu@interfree.it)
+/***************************************************************************
+ *   Copyright (C) 1998-2013 by authors (see AUTHORS.txt )                 *
+ *                                                                         *
+ *   This file is part of OCLToys.                                         *
+ *                                                                         *
+ *   OCLToys is free software; you can redistribute it and/or modify       *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 3 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   OCLToys is distributed in the hope that it will be useful,            *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program.  If not, see <http://www.gnu.org/licenses/>. *
+ *                                                                         *
+ *   OCLToys website: http://code.google.com/p/ocltoys                     *
+ ***************************************************************************/
 
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be included
-in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+#include "ocltoy.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
 
-// Jens's patch for MacOS
-#ifdef __MACOSX
-#include <OpenCL/opencl.h>
-#else
-#include <CL/cl.h>
-#endif
+#include <boost/lexical_cast.hpp>
+#include <boost/filesystem.hpp>
 
 #include "displayfunc.h"
 
@@ -510,33 +506,119 @@ void UpdateMandel() {
 			elapsedTime, sampleSec / 1000.f, maxIterations);
 }
 
-int main(int argc, char *argv[]) {
-	amiMandelCPU = 0;
+class MandelGPU : public OCLToy {
+public:
+	MandelGPU() : OCLToy("MandelGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (Written by David \"Dade\" Bucciarelli)") {
+	}
+	virtual ~MandelGPU() { }
 
-	fprintf(stderr, "Usage: %s\n", argv[0]);
-	fprintf(stderr, "Usage: %s <use CPU device (0 or 1)>  <use GPU device (0 or 1)> <kernel file name> <window width> <window height> <max. iterations>\n", argv[0]);
+protected:
+	virtual void ParseArgs() {
+		for (int i = 1; i < argc; i++) {
+			if (argv[i][0] == '-') {
+				// I should check for out of range array index...
 
-	if (argc == 7) {
-		useCPU = atoi(argv[1]);
-		useGPU = atoi(argv[2]);
-		kernelFileName = argv[3];
-		width = atoi(argv[4]);
-		height = atoi(argv[5]);
-		maxIterations = atoi(argv[6]);
-	} else if (argc != 1)
-		exit(-1);
+				if (argv[i][1] == 'h') {
+					OCLTOY_LOG("Usage: " << argv[0] << " [options]" << std::endl <<
+							" -w [window width]" << std::endl <<
+							" -e [window height]" << std::endl <<
+							" -d [current directory path]" << std::endl <<
+							" -p <disable on screen help>" << std::endl <<
+							" -h <display this help and exit>");
+					exit(EXIT_SUCCESS);
+				}
 
-	SetUpOpenCL();
+				else if (argv[i][1] == 'e') windowWidth = boost::lexical_cast<unsigned int>(argv[++i]);
 
-	UpdateMandel();
+				else if (argv[i][1] == 'w') windowHeight = boost::lexical_cast<unsigned int>(argv[++i]);
 
-	//--------------------------------------------------------------------------
+				else if (argv[i][1] == 'd') boost::filesystem::current_path(boost::filesystem::path(argv[++i]));
 
-	InitGlut(argc, argv, "MandelGPU V1.3 (Written by David Bucciarelli)");
+				else if (argv[i][1] == 'p') printHelp = false;
 
-	glutMainLoop();
+				else {
+					OCLTOY_LOG("Invalid option: " << argv[i]);
+					exit(EXIT_FAILURE);
+				}
+			} else {
+				OCLTOY_LOG("Unknown argument: " << argv[i]);
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
 
-	//--------------------------------------------------------------------------
+	virtual int RunToy() {
+		InitGlut();
 
-	return 0;
+		SetUpOpenCL();
+		UpdateMandel();
+
+		glutMainLoop();
+
+		return EXIT_SUCCESS;
+	}
+	
+	virtual void DisplayCallBack() {
+		UpdateMandel();
+
+		glClear(GL_COLOR_BUFFER_BIT);
+		glRasterPos2i(0, 0);
+		glDrawPixels(width, height, GL_LUMINANCE, GL_UNSIGNED_BYTE, pixels);
+
+		// Title
+		glColor3f(1.f, 1.f, 1.f);
+		glRasterPos2i(4, height - 16);
+		PrintString(GLUT_BITMAP_HELVETICA_18, windowTitle);
+
+		// Caption line 0
+		glColor3f(1.f, 1.f, 1.f);
+		glRasterPos2i(4, 10);
+		PrintString(GLUT_BITMAP_HELVETICA_18, captionBuffer);
+
+		if (printHelp) {
+			glPushMatrix();
+			glLoadIdentity();
+			glOrtho(-0.5, 639.5, -0.5, 479.5, -1.0, 1.0);
+
+			PrintHelp();
+
+			glPopMatrix();
+		}
+
+		glutSwapBuffers();
+	}
+
+private:
+	void PrintHelp() {
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(0.f, 0.f, 0.5f, 0.5f);
+		glRecti(40, 40, 600, 440);
+
+		glColor3f(1.f, 1.f, 1.f);
+		glRasterPos2i(300, 420);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Help");
+
+		glRasterPos2i(60, 390);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "h - toggle Help");
+		glRasterPos2i(60, 360);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "arrow Keys - move left/right/up/down");
+		glRasterPos2i(60, 330);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "PageUp and PageDown - zoom in/out");
+		glRasterPos2i(60, 300);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 0 + Mouse X, Y - move left/right/up/down");
+		glRasterPos2i(60, 270);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 2 + Mouse X - zoom in/out");
+		glRasterPos2i(60, 240);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "+ - increase the max. interations by 32");
+		glRasterPos2i(60, 210);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "- - decrease the max. interations by 32");
+
+		glDisable(GL_BLEND);
+	}
+};
+
+int main(int argc, char **argv) {
+	MandelGPU toy;
+	return toy.Run(argc, argv);
 }

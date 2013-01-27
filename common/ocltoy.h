@@ -22,8 +22,8 @@
 #ifndef OCLTOY_H
 #define	OCLTOY_H
 
-#include "opencl.h"
 #include "utils.h"
+#include "version.h"
 
 #include <sstream>
 
@@ -33,17 +33,43 @@ extern void OCLToyDebugHandler(const char *msg);
 
 class OCLToy {
 public:
-	OCLToy() { }
+	OCLToy(const std::string &winTitle);
 	virtual ~OCLToy() { }
 
-	int Run(int argc, char *argv[]);
+	virtual int Run(int argc, char *argv[]);
 
 protected:
+	virtual void ReshapeCallBack(int newWidth, int newHeight);
+	virtual void DisplayCallBack() { }
+	virtual void TimerCallBack(int value) { }
+	virtual void KeyCallBack(unsigned char key, int x, int y) { }
+	virtual void SpecialCallBack(int key, int x, int y) { }
+	virtual void MouseCallBack(int button, int state, int x, int y) { }
+	virtual void MotionCallBack(int x, int y) { }
+
+	virtual void InitGlut();
+
 	virtual void ParseArgs() = 0;
 	virtual int RunToy() = 0;
 
 	int argc;
 	char **argv;
+
+	std::string windowTitle;
+	int windowWidth, windowHeight;
+
+	bool printHelp;
+
+private:
+	// It is possible to run only a single Toy at time
+	static OCLToy *currentOCLToy;
+	static void GlutReshapeFunc(int newWidth, int newHeight);
+	static void GlutDisplayFunc();
+	static void GlutTimerFunc(int value);
+	static void GlutKeyFunc(unsigned char key, int x, int y);
+	static void GlutSpecialFunc(int key, int x, int y);
+	static void GlutMouseFunc(int button, int state, int x, int y);
+	static void GlutMotionFunc(int x, int y);
 };
 
 #endif	/* OCLTOY_H */

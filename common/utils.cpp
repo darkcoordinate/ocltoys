@@ -131,3 +131,9 @@ std::string OCLErrorString(cl_int error) {
 			return boost::lexical_cast<std::string > (error);
 	}
 }
+
+void PrintString(void *font, const std::string &str) {
+	const char *s = str.c_str();
+	for (size_t i = 0; i < str.length(); i++)
+		glutBitmapCharacter(font, s[i]);
+}

@@ -39,8 +39,6 @@ extern void AllocateBuffers();
 extern void FreeBuffers();
 extern void UpdateMandel();
 
-int amiMandelCPU;
-
 int width = 640;
 int height = 480;
 float scale = 3.5f;
@@ -112,10 +110,7 @@ void displayFunc(void) {
 	// Title
 	glColor3f(1.f, 1.f, 1.f);
 	glRasterPos2i(4, height - 16);
-	if (amiMandelCPU)
-		PrintString(GLUT_BITMAP_HELVETICA_18, "MandelCPU V1.3 (Written by David Bucciarelli)");
-	else
-		PrintString(GLUT_BITMAP_HELVETICA_18, "MandelGPU V1.3 (Written by David Bucciarelli)");
+	PrintString(GLUT_BITMAP_HELVETICA_18, "MandelGPU V1.3 (Written by David Bucciarelli)");
 
 	// Caption line 0
 	glColor3f(1.f, 1.f, 1.f);
@@ -293,20 +288,20 @@ void motionFunc(int x, int y) {
 		glutPostRedisplay();
 }
 
-void InitGlut(int argc, char *argv[], char *windowTittle) {
-	glutInitWindowSize(width, height);
-	glutInitWindowPosition(0, 0);
-	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
-	glutInit(&argc, argv);
-
-	glutCreateWindow(windowTittle);
-
-	glutReshapeFunc(reshapeFunc);
-	glutKeyboardFunc(keyFunc);
-	glutSpecialFunc(specialFunc);
-	glutDisplayFunc(displayFunc);
-	glutMouseFunc(mouseFunc);
-	glutMotionFunc(motionFunc);
-
-	glMatrixMode(GL_PROJECTION);
-}
+//void InitGlut(int argc, char *argv[], char *windowTittle) {
+//	glutInitWindowSize(width, height);
+//	glutInitWindowPosition(0, 0);
+//	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+//	glutInit(&argc, argv);
+//
+//	glutCreateWindow(windowTittle);
+//
+//	glutReshapeFunc(reshapeFunc);
+//	glutKeyboardFunc(keyFunc);
+//	glutSpecialFunc(specialFunc);
+//	glutDisplayFunc(displayFunc);
+//	glutMouseFunc(mouseFunc);
+//	glutMotionFunc(motionFunc);
+//
+//	glMatrixMode(GL_PROJECTION);
+//}

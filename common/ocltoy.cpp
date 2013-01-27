@@ -25,9 +25,7 @@
 
 #include "ocltoy.h"
 
-void OCLToyDebugHandler(const char *msg) {
-	std::cerr << "[OCLToy] " << msg << std::endl;
-}
+//------------------------------------------------------------------------------
 
 #if defined(__GNUC__) && !defined(__CYGWIN__)
 #include <execinfo.h>
@@ -72,6 +70,19 @@ void OCLToyTerminate(void) {
 }
 #endif
 
+//------------------------------------------------------------------------------
+
+OCLToy *OCLToy::currentOCLToy = NULL;
+
+void OCLToyDebugHandler(const char *msg) {
+	std::cerr << "[OCLToy] " << msg << std::endl;
+}
+
+OCLToy::OCLToy(const std::string &winTitle) : windowTitle(winTitle),
+		windowWidth(800), windowHeight(600), printHelp(true) {
+	currentOCLToy = this;
+}
+
 int OCLToy::Run(int ac, char **av) {
 #if defined(__GNUC__) && !defined(__CYGWIN__)
 	std::set_terminate(OCLToyTerminate);
@@ -94,4 +105,77 @@ int OCLToy::Run(int ac, char **av) {
 		OCLTOY_LOG("ERROR: " << err.what());
 		return EXIT_FAILURE;
 	}
+}
+
+void OCLToy::ReshapeCallBack(int newWidth, int newHeight) {
+	// Check if width or height have really changed
+	if ((newWidth != windowWidth) ||
+			(newHeight != windowHeight)) {
+		windowWidth = newWidth;
+		windowHeight = newHeight;
+
+		glViewport(0, 0, windowWidth, windowHeight);
+		glLoadIdentity();
+		glOrtho(0.f, windowWidth - 1.f,
+				0.f, windowHeight - 1.f, -1.f, 1.f);
+
+		glutPostRedisplay();
+	}
+}
+
+void OCLToy::GlutReshapeFunc(int newWidth, int newHeight) {
+	currentOCLToy->ReshapeCallBack(newWidth, newHeight);
+}
+
+void OCLToy::GlutDisplayFunc() {
+	currentOCLToy->DisplayCallBack();
+}
+
+void OCLToy::GlutTimerFunc(int value) {
+	currentOCLToy->TimerCallBack(value);
+}
+
+void OCLToy::GlutKeyFunc(unsigned char key, int x, int y) {
+	currentOCLToy->KeyCallBack(key, x, y);
+}
+
+void OCLToy::GlutSpecialFunc(int key, int x, int y) {
+	currentOCLToy->SpecialCallBack(key, x, y);
+}
+
+void OCLToy::GlutMouseFunc(int button, int state, int x, int y) {
+	currentOCLToy->MouseCallBack(button, state, x, y);
+}
+
+void OCLToy::GlutMotionFunc(int x, int y) {
+	currentOCLToy->MotionCallBack(x, y);
+}
+
+void OCLToy::InitGlut() {
+	glutInit(&argc, argv);
+
+	glutInitWindowSize(windowWidth, windowHeight);
+	// Center the window
+	const int scrWidth = glutGet(GLUT_SCREEN_WIDTH);
+	const int scrHeight = glutGet(GLUT_SCREEN_HEIGHT);
+	if ((scrWidth + 50 < windowWidth) || (scrHeight + 50 < windowHeight))
+		glutInitWindowPosition(0, 0);
+	else
+		glutInitWindowPosition((scrWidth - windowWidth) / 2, (scrHeight - windowHeight) / 2);
+
+	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+	glutCreateWindow(windowTitle.c_str());
+
+	glutReshapeFunc(&OCLToy::GlutReshapeFunc);
+	glutKeyboardFunc(&OCLToy::GlutKeyFunc);
+	glutSpecialFunc(&OCLToy::GlutSpecialFunc);
+	glutDisplayFunc(&OCLToy::GlutDisplayFunc);
+	glutMouseFunc(&OCLToy::GlutMouseFunc);
+	glutMotionFunc(&OCLToy::GlutMotionFunc);
+
+	glMatrixMode(GL_PROJECTION);
+	glViewport(0, 0, windowWidth, windowHeight);
+	glLoadIdentity();
+	glOrtho(0.f, windowWidth - 1.f,
+			0.f, windowHeight - 1.f, -1.f, 1.f);
 }

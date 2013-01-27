@@ -19,6 +19,16 @@
 #   OCLToys website: http://code.google.com/p/ocltoys                     #
 ###########################################################################
 
+set(OCLTOYS_VERSION_MAJOR 1)
+set(OCLTOYS_VERSION_MINOR 0devel1)
+
+# Configure a header file to pass some of the CMake settings
+# to the source code
+configure_file(
+  "version.h.in"
+  "version.h"
+  )
+
 set(COMMONLIB_SRCS
 	ocltoy.cpp
 	utils.cpp

@@ -1,6 +1,6 @@
 ^nbproject/*
-^common/libocltoys_common.a
-^mandelgpu/mandelgpu
+^common/libocltoys_common.a$
+^mandelgpu/mandelgpu$
 ^.dep.inc
 syntax: glob
 *~
