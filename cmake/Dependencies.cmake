@@ -39,7 +39,7 @@ set(Boost_MINIMUM_VERSION       "1.44.0")
 
 set(Boost_ADDITIONAL_VERSIONS "1.47.0" "1.46.1" "1.46" "1.46.0" "1.45" "1.45.0" "1.44" "1.44.0")
 
-set(OCLTOYS_BOOST_COMPONENTS thread filesystem system)
+set(OCLTOYS_BOOST_COMPONENTS thread filesystem system program_options)
 find_package(Boost ${Boost_MINIMUM_VERSION} COMPONENTS ${OCLTOYS_BOOST_COMPONENTS})
 if (NOT Boost_FOUND)
         # Try again with the other type of libs

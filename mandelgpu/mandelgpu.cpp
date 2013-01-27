@@ -513,38 +513,13 @@ public:
 	virtual ~MandelGPU() { }
 
 protected:
-	virtual void ParseArgs() {
-		for (int i = 1; i < argc; i++) {
-			if (argv[i][0] == '-') {
-				// I should check for out of range array index...
+	boost::program_options::options_description GetOptionsDescriction() {
+		boost::program_options::options_description opts("MandelGPU options");
 
-				if (argv[i][1] == 'h') {
-					OCLTOY_LOG("Usage: " << argv[0] << " [options]" << std::endl <<
-							" -w [window width]" << std::endl <<
-							" -e [window height]" << std::endl <<
-							" -d [current directory path]" << std::endl <<
-							" -p <disable on screen help>" << std::endl <<
-							" -h <display this help and exit>");
-					exit(EXIT_SUCCESS);
-				}
+		opts.add_options()
+			("kernel,k", boost::program_options::value<std::string>(), "Kernel file name");
 
-				else if (argv[i][1] == 'e') windowWidth = boost::lexical_cast<unsigned int>(argv[++i]);
-
-				else if (argv[i][1] == 'w') windowHeight = boost::lexical_cast<unsigned int>(argv[++i]);
-
-				else if (argv[i][1] == 'd') boost::filesystem::current_path(boost::filesystem::path(argv[++i]));
-
-				else if (argv[i][1] == 'p') printHelp = false;
-
-				else {
-					OCLTOY_LOG("Invalid option: " << argv[i]);
-					exit(EXIT_FAILURE);
-				}
-			} else {
-				OCLTOY_LOG("Unknown argument: " << argv[i]);
-				exit(EXIT_FAILURE);
-			}
-		}
+		return opts;
 	}
 
 	virtual int RunToy() {

@@ -23,6 +23,8 @@
 #include <stdexcept>
 #include <string>
 
+#include <boost/filesystem.hpp>
+
 #include "ocltoy.h"
 
 //------------------------------------------------------------------------------
@@ -83,16 +85,59 @@ OCLToy::OCLToy(const std::string &winTitle) : windowTitle(winTitle),
 	currentOCLToy = this;
 }
 
-int OCLToy::Run(int ac, char **av) {
+int OCLToy::Run(int argc, char **argv) {
 #if defined(__GNUC__) && !defined(__CYGWIN__)
 	std::set_terminate(OCLToyTerminate);
 #endif
 
-	argc = ac;
-	argv = av;
-
 	try {
-		ParseArgs();
+		OCLTOY_LOG(windowTitle);
+
+		//----------------------------------------------------------------------
+		// Parse command line options
+		//----------------------------------------------------------------------
+
+		glutInit(&argc, argv);
+
+		boost::program_options::options_description genericOpts("Generic options");
+		genericOpts.add_options()
+			("help,h", "Display this help and exit")
+			("width,w", boost::program_options::value<int>()->default_value(800), "Window width")
+			("height,e", boost::program_options::value<int>()->default_value(600), "Window height")
+			("directory,d", boost::program_options::value<std::string>(), "Current directory path")
+			("noscreenhelp,s", "Disable on screen help");
+
+		boost::program_options::options_description toyOpts = GetOptionsDescriction();
+
+		boost::program_options::options_description opts;
+		opts.add(genericOpts).add(toyOpts);
+
+		try {
+			// Disable guessing of option names
+			const int cmdstyle = boost::program_options::command_line_style::default_style &
+				~boost::program_options::command_line_style::allow_guessing;
+			boost::program_options::store(boost::program_options::command_line_parser(argc, argv).
+				style(cmdstyle).options(opts).run(), commandLineOpts);
+
+			windowWidth = commandLineOpts["width"].as<int>();
+			windowHeight = commandLineOpts["height"].as<int>();
+			if (commandLineOpts.count("directory"))
+				boost::filesystem::current_path(boost::filesystem::path(commandLineOpts["directory"].as<std::string>()));
+			if (commandLineOpts.count("noscreenhelp"))
+				printHelp = false;
+
+			if (commandLineOpts.count("help")) {
+				OCLTOY_LOG("Command usage" << std::endl << opts);
+				exit(EXIT_SUCCESS);
+			}
+		} catch(boost::program_options::error &e) {
+			OCLTOY_LOG("COMMAND LINE ERROR: " << e.what() << std::endl << opts); 
+			exit(EXIT_FAILURE);
+		}
+
+		//----------------------------------------------------------------------
+		// Run the application
+		//----------------------------------------------------------------------
 
 		return RunToy();
 	} catch (cl::Error err) {
@@ -152,8 +197,6 @@ void OCLToy::GlutMotionFunc(int x, int y) {
 }
 
 void OCLToy::InitGlut() {
-	glutInit(&argc, argv);
-
 	glutInitWindowSize(windowWidth, windowHeight);
 	// Center the window
 	const int scrWidth = glutGet(GLUT_SCREEN_WIDTH);

@@ -27,6 +27,8 @@
 
 #include <sstream>
 
+#include <boost/program_options.hpp>
+
 extern void OCLToyDebugHandler(const char *msg);
 
 #define OCLTOY_LOG(a) { std::stringstream _OCLTOY_LOG_LOCAL_SS; _OCLTOY_LOG_LOCAL_SS << a; OCLToyDebugHandler(_OCLTOY_LOG_LOCAL_SS.str().c_str()); }
@@ -49,11 +51,10 @@ protected:
 
 	virtual void InitGlut();
 
-	virtual void ParseArgs() = 0;
+	virtual boost::program_options::options_description GetOptionsDescriction() = 0;
 	virtual int RunToy() = 0;
 
-	int argc;
-	char **argv;
+	boost::program_options::variables_map commandLineOpts;
 
 	std::string windowTitle;
 	int windowWidth, windowHeight;
