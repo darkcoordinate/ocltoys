@@ -1,5 +1,5 @@
 ###########################################################################
-#   Copyright (C) 1998-2011 by authors (see AUTHORS.txt )                 #
+#   Copyright (C) 1998-2013 by authors (see AUTHORS.txt )                 #
 #                                                                         #
 #   This file is part of OCLToys.                                         #
 #                                                                         #
@@ -94,6 +94,14 @@ endif()
 if (NOT GLEW_FOUND)
 	MESSAGE(FATAL_ERROR "--> Could not locate required GLEW files - Please check ${GLEW_SEARCH_PATH}")
 endif()
+
+###########################################################################
+#
+# Common Library
+#
+###########################################################################
+
+add_subdirectory(common)
 
 ###########################################################################
 #

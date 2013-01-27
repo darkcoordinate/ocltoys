@@ -19,16 +19,11 @@
 #   OCLToys website: http://code.google.com/p/ocltoys                     #
 ###########################################################################
 
-include_directories(../common)
-
-set(MANDELGPU_SRCS
-	mandelgpu.cpp
-	displayfunc.cpp
+set(COMMONLIB_SRCS
+	ocltoy.cpp
+	utils.cpp
 	)
 
-add_executable(mandelgpu ${MANDELGPU_SRCS})
+add_library(ocltoys_common STATIC ${COMMONLIB_SRCS})
 
-TARGET_LINK_LIBRARIES(mandelgpu ocltoys_common ${GLEW_LIBRARY} ${GLUT_LIBRARY} ${OPENGL_LIBRARY} ${OPENCL_LIBRARIES} ${Boost_LIBRARIES})
-
-# This instructs FREEGLUT to emit a pragma for the static version
-SET_TARGET_PROPERTIES(mandelgpu PROPERTIES COMPILE_DEFINITIONS FREEGLUT_STATIC)
+link_directories (${OCLToys_LIB_DIR}/common)
