@@ -1,0 +1,9 @@
+^nbproject/*
+^mandelgpu/mandelgpu
+^.dep.inc
+syntax: glob
+*~
+*CMakeFiles
+*CMakeCache.txt
+*Makefile
+*cmake_install.cmake
