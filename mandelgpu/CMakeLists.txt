@@ -23,7 +23,6 @@ include_directories(../common)
 
 set(MANDELGPU_SRCS
 	mandelgpu.cpp
-	displayfunc.cpp
 	)
 
 add_executable(mandelgpu ${MANDELGPU_SRCS})
