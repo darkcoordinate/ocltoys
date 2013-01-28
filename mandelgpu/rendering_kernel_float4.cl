@@ -34,7 +34,7 @@ static int colormap(const int maxIterations, int i) {
 }
 
 __kernel void mandelGPU(
-		__global int *pixels,
+		__global uint *pixels,
 		const int width,
 		const int height,
 		const float scale,
