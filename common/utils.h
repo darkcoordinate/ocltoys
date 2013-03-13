@@ -41,6 +41,8 @@
 #endif
 
 extern std::string OCLErrorString(cl_int error);
+extern std::string OCLLocalMemoryTypeString(cl_device_local_mem_type type);
+extern std::string OCLDeviceTypeString(cl_device_type type);
 
 inline double WallClockTime() {
 #if defined(__linux__) || defined(__APPLE__) || defined(__CYGWIN__) || defined(__OpenBSD__) || defined(__FreeBSD__)
@@ -56,6 +58,7 @@ inline double WallClockTime() {
 }
 
 extern void PrintString(void *font, const std::string &str);
+extern std::string ReadSources(const std::string &fileName);
 
 #endif	/* UTILS_H */
 

@@ -24,6 +24,7 @@
 #include <string>
 
 #include <boost/filesystem.hpp>
+#include <boost/regex.hpp>
 
 #include "ocltoy.h"
 
@@ -105,6 +106,9 @@ int OCLToy::Run(int argc, char **argv) {
 			("width,w", boost::program_options::value<int>()->default_value(800), "Window width")
 			("height,e", boost::program_options::value<int>()->default_value(600), "Window height")
 			("directory,d", boost::program_options::value<std::string>(), "Current directory path")
+			("ocldevices,o", boost::program_options::value<std::string>()->default_value("ALL_GPUS"),
+				"OpenCL device selection string. It can be ALL, ALL_GPUS, ALL_CPUS, FIRST_GPU, FIRST_CPU or a "
+				"binary string where 0 means disabled and 1 enabled (for instance, 1100 will use only the first and second devices of the 4 available)")
 			("noscreenhelp,s", "Disable on screen help");
 
 		boost::program_options::options_description toyOpts = GetOptionsDescriction();
@@ -136,6 +140,19 @@ int OCLToy::Run(int argc, char **argv) {
 		}
 
 		//----------------------------------------------------------------------
+		// Initialize GLUT
+		//----------------------------------------------------------------------
+
+		InitGlut();
+
+		//----------------------------------------------------------------------
+		// Initialize OpenCL
+		//----------------------------------------------------------------------
+
+		SelectOpenCLDevices();
+		InitOpenCLDevices();
+
+		//----------------------------------------------------------------------
 		// Run the application
 		//----------------------------------------------------------------------
 
@@ -151,6 +168,210 @@ int OCLToy::Run(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 }
+
+//------------------------------------------------------------------------------
+// OpenCL related code
+//------------------------------------------------------------------------------
+
+void OCLToy::SelectOpenCLDevices() {
+	// Scan all platforms and devices available
+	VECTOR_CLASS<cl::Platform> platforms;
+	cl::Platform::get(&platforms);
+
+	const std::string selectMethod = commandLineOpts["ocldevices"].as<std::string>();
+	OCLTOY_LOG("OpenCL devices select method: " << selectMethod);
+
+	size_t selectIndex = 0;
+	boost::regex selRegex("[01]+");
+	for (size_t i = 0; i < platforms.size(); ++i) {
+		OCLTOY_LOG("OpenCL Platform " << i << ": " << platforms[i].getInfo<CL_PLATFORM_VENDOR>());
+
+		// Get the list of devices available on the platform
+		VECTOR_CLASS<cl::Device> devices;
+		platforms[i].getDevices(CL_DEVICE_TYPE_ALL, &devices);
+
+		for (size_t j = 0; j < devices.size(); ++j) {
+			OCLTOY_LOG("  OpenCL device " << j << ": " << devices[j].getInfo<CL_DEVICE_NAME>());
+			OCLTOY_LOG("    Type: " << OCLDeviceTypeString(devices[j].getInfo<CL_DEVICE_TYPE>()));
+			OCLTOY_LOG("    Units: " << devices[j].getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
+			OCLTOY_LOG("    Global memory: " << devices[j].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>() / 1024 << "Kbytes");
+			OCLTOY_LOG("    Local memory: " << devices[j].getInfo<CL_DEVICE_LOCAL_MEM_SIZE>() / 1024 << "Kbytes");
+			OCLTOY_LOG("    Local memory type: " << OCLLocalMemoryTypeString(devices[j].getInfo<CL_DEVICE_LOCAL_MEM_TYPE>()));
+			OCLTOY_LOG("    Constant memory: " << devices[j].getInfo<CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE>() / 1024 << "Kbytes");
+
+			bool selected = false;
+			if ((selectMethod == "ALL") ||
+				((selectMethod == "ALL_GPUS") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU)) ||
+				((selectMethod == "ALL_CPUS") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_CPU)) ||
+				((selectMethod == "FIRST_GPU") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU) && (selectedDevices.size() == 0)) ||
+				((selectMethod == "FIRST_CPU") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_CPU) && (selectedDevices.size() == 0)))
+				selected = true;
+			else if (boost::regex_match(selectMethod, selRegex)) {
+				if (selectMethod.length() <= selectIndex)
+					throw std::runtime_error("OpenCL select devices string (--ocldevices option) has the wrong length");
+				if (selectMethod.at(selectIndex) == '1')
+					selected = true;
+				else if (selectMethod.at(selectIndex) != '0')
+					throw std::runtime_error("Syntax error in OpenCL select devices string (--ocldevices option)");
+			}
+
+			if (selected) {
+				if (selectedDevices.size() >= GetMaxDeviceCountSupported()) {
+					OCLTOY_LOG("    NOT SELECTED because this toy supports only " << GetMaxDeviceCountSupported() << " device");
+				} else {
+					selectedDevices.push_back(devices[j]);
+					OCLTOY_LOG("    SELECTED");
+				}
+			} else
+				OCLTOY_LOG("    NOT SELECTED");
+
+			++selectIndex;
+		}
+	}
+
+	if (selectedDevices.size() == 0)
+		throw std::runtime_error("Unable to find an OpenCL device");
+}
+
+void OCLToy::InitOpenCLDevices() {
+	for (std::vector<cl::Device>::iterator dev = selectedDevices.begin(); dev < selectedDevices.end(); ++dev) {
+		// Allocate a context with the selected device
+		VECTOR_CLASS<cl::Device> devices;
+		devices.push_back(*dev);
+
+		cl::Context ctx(devices);
+		deviceContexts.push_back(ctx);
+
+		// Allocate the queue for this device
+		cl::CommandQueue cmdQueue(ctx, *dev);
+		deviceQueues.push_back(cmdQueue);
+		
+		deviceUsedMemory.push_back(0);
+	}
+}
+
+void OCLToy::AllocOCLBufferRO(const unsigned int deviceIndex, cl::Buffer **buff,
+		void *src, const size_t size, const std::string &desc) {
+	cl::Device &oclDevice = selectedDevices[deviceIndex];
+
+	// Check if the buffer is too big
+	if (oclDevice.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>() < size) {
+		std::stringstream ss;
+		ss << "The " << desc << " buffer is too big for " << oclDevice.getInfo<CL_DEVICE_NAME>() << 
+				" device (i.e. CL_DEVICE_MAX_MEM_ALLOC_SIZE=" <<
+				oclDevice.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>() << ")";
+		throw std::runtime_error(ss.str());
+	}
+
+	if (*buff) {
+		// Check the size of the already allocated buffer
+
+		if (size == (*buff)->getInfo<CL_MEM_SIZE>()) {
+			// I can reuse the buffer; just update the content
+
+			deviceQueues[deviceIndex].enqueueWriteBuffer(**buff, CL_FALSE, 0, size, src);
+			return;
+		} else {
+			// Free the buffer
+			deviceUsedMemory[deviceIndex] -= (*buff)->getInfo<CL_MEM_SIZE>();
+			delete *buff;
+		}
+	}
+
+	cl::Context &oclContext = deviceContexts[deviceIndex];
+
+	OCLTOY_LOG( desc << " buffer size: " <<
+			(size < 10000 ? size : (size / 1024)) << (size < 10000 ? "bytes" : "Kbytes"));
+	*buff = new cl::Buffer(oclContext,
+			CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+			size, src);
+	deviceUsedMemory[deviceIndex] += (*buff)->getInfo<CL_MEM_SIZE>();
+}
+
+void OCLToy::AllocOCLBufferRW(const unsigned int deviceIndex, cl::Buffer **buff,
+		const size_t size, const std::string &desc) {
+	cl::Device &oclDevice = selectedDevices[deviceIndex];
+
+	// Check if the buffer is too big
+	if (oclDevice.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>() < size) {
+		std::stringstream ss;
+		ss << "The " << desc << " buffer is too big for " << oclDevice.getInfo<CL_DEVICE_NAME>() << 
+				" device (i.e. CL_DEVICE_MAX_MEM_ALLOC_SIZE=" <<
+				oclDevice.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>() << ")";
+		throw std::runtime_error(ss.str());
+	}
+
+	if (*buff) {
+		// Check the size of the already allocated buffer
+
+		if (size == (*buff)->getInfo<CL_MEM_SIZE>()) {
+			// I can reuse the buffer
+			return;
+		} else {
+			// Free the buffer
+			deviceUsedMemory[deviceIndex] -= (*buff)->getInfo<CL_MEM_SIZE>();
+			delete *buff;
+		}
+	}
+
+	cl::Context &oclContext = deviceContexts[deviceIndex];
+
+	OCLTOY_LOG( desc << " buffer size: " <<
+			(size < 10000 ? size : (size / 1024)) << (size < 10000 ? "bytes" : "Kbytes"));
+	*buff = new cl::Buffer(oclContext,
+			CL_MEM_READ_WRITE,
+			size);
+	deviceUsedMemory[deviceIndex] += (*buff)->getInfo<CL_MEM_SIZE>();
+}
+
+void OCLToy::AllocOCLBufferW(const unsigned int deviceIndex, cl::Buffer **buff,
+		const size_t size, const std::string &desc) {
+	cl::Device &oclDevice = selectedDevices[deviceIndex];
+
+	// Check if the buffer is too big
+	if (oclDevice.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>() < size) {
+		std::stringstream ss;
+		ss << "The " << desc << " buffer is too big for " << oclDevice.getInfo<CL_DEVICE_NAME>() << 
+				" device (i.e. CL_DEVICE_MAX_MEM_ALLOC_SIZE=" <<
+				oclDevice.getInfo<CL_DEVICE_MAX_MEM_ALLOC_SIZE>() << ")";
+		throw std::runtime_error(ss.str());
+	}
+
+	if (*buff) {
+		// Check the size of the already allocated buffer
+
+		if (size == (*buff)->getInfo<CL_MEM_SIZE>()) {
+			// I can reuse the buffer
+			return;
+		} else {
+			// Free the buffer
+			deviceUsedMemory[deviceIndex] -= (*buff)->getInfo<CL_MEM_SIZE>();
+			delete *buff;
+		}
+	}
+
+	cl::Context &oclContext = deviceContexts[deviceIndex];
+
+	OCLTOY_LOG( desc << " buffer size: " <<
+			(size < 10000 ? size : (size / 1024)) << (size < 10000 ? "bytes" : "Kbytes"));
+	*buff = new cl::Buffer(oclContext,
+			CL_MEM_WRITE_ONLY,
+			size);
+	deviceUsedMemory[deviceIndex] += (*buff)->getInfo<CL_MEM_SIZE>();
+}
+
+void OCLToy::FreeOCLBuffer(const unsigned int deviceIndex, cl::Buffer **buff) {
+	if (*buff) {
+		deviceUsedMemory[deviceIndex] += (*buff)->getInfo<CL_MEM_SIZE>();
+
+		delete *buff;
+		*buff = NULL;
+	}
+}
+
+//------------------------------------------------------------------------------
+// GLUT related code
+//------------------------------------------------------------------------------
 
 void OCLToy::ReshapeCallBack(int newWidth, int newHeight) {
 	// Check if width or height have really changed

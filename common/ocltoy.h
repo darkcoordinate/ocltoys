@@ -26,6 +26,7 @@
 #include "version.h"
 
 #include <sstream>
+#include <vector>
 
 #include <boost/program_options.hpp>
 
@@ -41,6 +42,10 @@ public:
 	virtual int Run(int argc, char *argv[]);
 
 protected:
+	//--------------------------------------------------------------------------
+	// GLUT related code
+	//--------------------------------------------------------------------------
+
 	virtual void ReshapeCallBack(int newWidth, int newHeight);
 	virtual void DisplayCallBack() { }
 	virtual void TimerCallBack(int value) { }
@@ -51,10 +56,30 @@ protected:
 
 	virtual void InitGlut();
 
+	//--------------------------------------------------------------------------
+	// OpenCL related code
+	//--------------------------------------------------------------------------
+
+	virtual void SelectOpenCLDevices();
+	virtual void InitOpenCLDevices();
+	virtual unsigned int GetMaxDeviceCountSupported() const = 0;
+
+	void AllocOCLBufferRO(const unsigned int deviceIndex, cl::Buffer **buff,
+		void *src, const size_t size, const std::string &desc);
+	void AllocOCLBufferRW(const unsigned int deviceIndex, cl::Buffer **buff,
+		const size_t size, const std::string &desc);
+	void AllocOCLBufferW(const unsigned int deviceIndex, cl::Buffer **buff,
+		const size_t size, const std::string &desc);
+	void FreeOCLBuffer(const unsigned int deviceIndex, cl::Buffer **buff);
+
 	virtual boost::program_options::options_description GetOptionsDescriction() = 0;
 	virtual int RunToy() = 0;
 
 	boost::program_options::variables_map commandLineOpts;
+	std::vector<cl::Device> selectedDevices;
+	std::vector<cl::Context> deviceContexts;
+	std::vector<cl::CommandQueue> deviceQueues;
+	std::vector<size_t> deviceUsedMemory;
 
 	std::string windowTitle;
 	int windowWidth, windowHeight;

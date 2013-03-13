@@ -19,7 +19,9 @@
  *   OCLToys website: http://code.google.com/p/ocltoys                     *
  ***************************************************************************/
 
+#include <fstream>
 #include <boost/lexical_cast.hpp>
+#include <stdexcept>
 
 #include "opencl.h"
 #include "utils.h"
@@ -128,7 +130,31 @@ std::string OCLErrorString(cl_int error) {
 		case CL_INVALID_GLOBAL_WORK_SIZE:
 			return "CL_INVALID_GLOBAL_WORK_SIZE";
 		default:
-			return boost::lexical_cast<std::string > (error);
+			return boost::lexical_cast<std::string >(error);
+	}
+}
+
+std::string OCLLocalMemoryTypeString(cl_device_local_mem_type type) {
+	switch (type) {
+		case CL_LOCAL:
+			return "LOCAL";
+		case CL_GLOBAL:
+			return "GLOBAL";
+		default:
+			return "UNKNOWN";
+	}
+}
+
+std::string OCLDeviceTypeString(cl_device_type type) {
+	switch (type) {
+		case CL_DEVICE_TYPE_CPU:
+			return "CPU";
+		case CL_DEVICE_TYPE_GPU:
+			return "GPU";
+		case CL_DEVICE_TYPE_ACCELERATOR:
+			return "ACCELERATOR";
+		default:
+			return "UNKNOWN";
 	}
 }
 
@@ -136,4 +162,19 @@ void PrintString(void *font, const std::string &str) {
 	const char *s = str.c_str();
 	for (size_t i = 0; i < str.length(); i++)
 		glutBitmapCharacter(font, s[i]);
+}
+
+std::string ReadSources(const std::string &fileName) {
+	std::ifstream ifs(fileName.c_str());
+	if (!ifs.good())
+		throw std::runtime_error("Error while opening file: " + fileName);
+
+	std::string content((std::istreambuf_iterator<char>(ifs)),
+			(std::istreambuf_iterator<char>()));	
+	if (!ifs.good())
+		throw std::runtime_error("Error while reading file: " + fileName);
+
+	ifs.close();
+
+	return content;
 }
