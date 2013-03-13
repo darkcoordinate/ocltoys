@@ -34,7 +34,8 @@
 class JuliaGPU : public OCLToy {
 public:
 	JuliaGPU() : OCLToy("JuliaGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
-			mouseButton0(0), mouseButton2(0), mouseGrabLastX(0), mouseGrabLastY(0),
+			mouseButton0(false), mouseButton2(false), shiftMouseButton0(false), muMouseButton0(false),
+			mouseGrabLastX(0), mouseGrabLastY(0),
 			pixels(NULL), pixelsBuff(NULL), configBuff(NULL), workGroupSize(64) {
 		config.width = 640;
 		config.height = 480;
@@ -103,10 +104,43 @@ protected:
 	// GLUT related code
 	//--------------------------------------------------------------------------
 
+#define MU_RECT_SIZE 80
+	void DrawJulia(const int origX, const int origY, const float cR, const float cI) {
+		float buffer[MU_RECT_SIZE][MU_RECT_SIZE][4];
+		const float invSize = 3.f / MU_RECT_SIZE;
+		int i, j;
+		for (j = 0; j < MU_RECT_SIZE; ++j) {
+			for (i = 0; i < MU_RECT_SIZE; ++i) {
+				float x = i * invSize - 1.5f;
+				float y = j * invSize - 1.5f;
+
+				int iter;
+				for (iter = 0; iter < 64; ++iter) {
+					const float x2 = x * x;
+					const float y2 = y * y;
+					if (x2 + y2 > 4.f)
+						break;
+
+					const float newx = x2 - y2 +cR;
+					const float newy = 2.f * x * y + cI;
+					x = newx;
+					y = newy;
+				}
+
+				buffer[i][j][0] = iter / 64.f;
+				buffer[i][j][1] = 0.f;
+				buffer[i][j][2] = 0.f;
+				buffer[i][j][3] = 0.5f;
+			}
+		}
+
+		glRasterPos2i(origX, origY);
+		glDrawPixels(MU_RECT_SIZE, MU_RECT_SIZE, GL_RGBA, GL_FLOAT, buffer);
+	}
+
 	virtual void DisplayCallBack() {
 		UpdateJulia();
 
-		glClear(GL_COLOR_BUFFER_BIT);
 		glRasterPos2i(0, 0);
 		glDrawPixels(config.width, config.height, GL_RGB, GL_FLOAT, pixels);
 
@@ -119,6 +153,54 @@ protected:
 		glColor3f(1.f, 1.f, 1.f);
 		glRasterPos2i(4, 10);
 		PrintString(GLUT_BITMAP_HELVETICA_18, captionString);
+
+		// Caption line 1
+		char captionString2[256];
+		sprintf(captionString2, "Shadow/AO %d - SuperSampling %dx%d - Fast rendering (%s)",
+				config.enableShadow, config.superSamplingSize, config.superSamplingSize,
+				config.actvateFastRendering ? "active" : "not active");
+		glRasterPos2i(4, 30);
+		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
+		// Caption line 2
+		sprintf(captionString2, "Epsilon %.5f - Max. Iter. %u",
+				config.epsilon, config.maxIterations);
+		glRasterPos2i(4, 50);
+		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
+		// Caption line 3
+		sprintf(captionString2, "Mu = (%.3f, %.3f, %.3f, %.3f)",
+				config.mu[0], config.mu[1], config.mu[2], config.mu[3]);
+		glRasterPos2i(4, 70);
+		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
+
+		// Draw Mu constants
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		const int baseMu1 = config.width - MU_RECT_SIZE - 2;
+		const int baseMu2 = 1;
+		DrawJulia(baseMu1, baseMu2, config.mu[0], config.mu[1]);
+		const int baseMu3 = config.width - MU_RECT_SIZE - 2;
+		const int baseMu4 = MU_RECT_SIZE + 2;
+		DrawJulia(baseMu3, baseMu4, config.mu[2], config.mu[3]);
+		glDisable(GL_BLEND);
+
+		glColor3f(1.f, 1.f, 1.f);
+		const int mu1 = baseMu1 + MU_RECT_SIZE * (config.mu[0] + 1.5f) / 3.f;
+		const int mu2 = baseMu2 + MU_RECT_SIZE * (config.mu[1] + 1.5f) / 3.f;
+		glBegin(GL_LINES);
+		glVertex2i(mu1 - 4, mu2);
+		glVertex2i(mu1 + 4, mu2);
+		glVertex2i(mu1, mu2 - 4);
+		glVertex2i(mu1, mu2 + 4);
+		glEnd();
+
+		const int mu3 = baseMu3 + MU_RECT_SIZE * (config.mu[2] + 1.5f) / 3.f;
+		const int mu4 = baseMu4 + MU_RECT_SIZE * (config.mu[3] + 1.5f) / 3.f;
+		glBegin(GL_LINES);
+		glVertex2i(mu3 - 4, mu4);
+		glVertex2i(mu3 + 4, mu4);
+		glVertex2i(mu3, mu4 - 4);
+		glVertex2i(mu3, mu4 + 4);
+		glEnd();
 
 		if (printHelp) {
 			glPushMatrix();
@@ -133,6 +215,19 @@ protected:
 		glutSwapBuffers();
 	}
 
+	void Update(const bool allocateBuffers = false) {
+		if (allocateBuffers)
+			AllocateBuffers();
+
+		UpdateCamera();
+
+		// Send the new configuration to the OpenCL device
+		cl::CommandQueue &oclQueue = deviceQueues[0];
+		oclQueue.enqueueWriteBuffer(*configBuff, CL_FALSE, 0, configBuff->getInfo<CL_MEM_SIZE>(), &config);
+
+		UpdateJulia();
+	}
+
 	virtual void ReshapeCallBack(int newWidth, int newHeight) {
 		windowWidth = newWidth;
 		windowHeight = newHeight;
@@ -142,16 +237,20 @@ protected:
 		glOrtho(0.f, windowWidth - 1.f,
 				0.f, windowHeight - 1.f, -1.f, 1.f);
 
-		AllocateBuffers();
+		config.width = windowWidth;
+		config.height = newHeight;
+		Update(true);
 
 		glutPostRedisplay();
 	}
 
+#define MOVE_STEP 0.5f
+#define ROTATE_STEP (2.f * M_PI / 180.f)
 	virtual void KeyCallBack(unsigned char key, int x, int y) {
 		bool needRedisplay = true;
 
 		switch (key) {
-			case 's': {
+			case 'p': {
 				// Write image to PPM file
 				std::ofstream f("image.ppm", std::ofstream::trunc);
 				if (!f.good()) {
@@ -186,24 +285,261 @@ protected:
 			case 'h':
 				printHelp = (!printHelp);
 				break;
+			case 'a': {
+				Vec dir = config.camera.x;
+				vnorm(dir);
+				vsmul(dir, -MOVE_STEP, dir);
+				vadd(config.camera.orig, config.camera.orig, dir);
+				vadd(config.camera.target, config.camera.target, dir);
+				break;
+			}
+			case 'd': {
+				Vec dir = config.camera.x;
+				vnorm(dir);
+				vsmul(dir, MOVE_STEP, dir);
+				vadd(config.camera.orig, config.camera.orig, dir);
+				vadd(config.camera.target, config.camera.target, dir);
+				break;
+			}
+			case 'w': {
+				Vec dir = config.camera.dir;
+				vsmul(dir, MOVE_STEP, dir);
+				vadd(config.camera.orig, config.camera.orig, dir);
+				vadd(config.camera.target, config.camera.target, dir);
+				break;
+			}
+			case 's': {
+				Vec dir = config.camera.dir;
+				vsmul(dir, -MOVE_STEP, dir);
+				vadd(config.camera.orig, config.camera.orig, dir);
+				vadd(config.camera.target, config.camera.target, dir);
+				break;
+			}
+			case 'r':
+				config.camera.orig.y += MOVE_STEP;
+				config.camera.target.y += MOVE_STEP;
+				break;
+			case 'f':
+				config.camera.orig.y -= MOVE_STEP;
+				config.camera.target.y -= MOVE_STEP;
+				break;
+			case 'l':
+				config.enableShadow = (!config.enableShadow);
+				break;
+			case '1':
+				config.epsilon *= 0.75f;
+				break;
+			case '2':
+				config.epsilon *= 1.f / 0.75f;
+				break;
+			case '3':
+				config.maxIterations = max(1, config.maxIterations - 1);
+				break;
+			case '4':
+				config.maxIterations = min(12, config.maxIterations + 1);
+				break;
+			case '5':
+				config.superSamplingSize = max(1, config.superSamplingSize - 1);
+				break;
+			case '6':
+				config.superSamplingSize = min(5, config.superSamplingSize + 1);
+				break;
 			default:
 				needRedisplay = false;
 				break;
 		}
 
 		if (needRedisplay) {
-			UpdateJulia();
+			Update();
 			glutPostRedisplay();
 		}
 	}
 
+	void RotateLightX(const float k) {
+		const float y = config.light[1];
+		const float z = config.light[2];
+		config.light[1] = y * cos(k) + z * sin(k);
+		config.light[2] = -y * sin(k) + z * cos(k);
+	}
+
+	void RotateLightY(const float k) {
+		const float x = config.light[0];
+		const float z = config.light[2];
+		config.light[0] = x * cos(k) - z * sin(k);
+		config.light[2] = x * sin(k) + z * cos(k);
+	}
+
+	void RotateCameraXbyOrig(const float k) {
+		Vec t = config.camera.orig;
+		config.camera.orig.y = t.y * cos(k) + t.z * sin(k);
+		config.camera.orig.z = -t.y * sin(k) + t.z * cos(k);
+	}
+
+	void RotateCameraYbyOrig(const float k) {
+		Vec t = config.camera.orig;
+		config.camera.orig.x = t.x * cos(k) - t.z * sin(k);
+		config.camera.orig.z = t.x * sin(k) + t.z * cos(k);
+	}
+
+	void RotateCameraX(const float k) {
+		Vec t = config.camera.target;
+		vsub(t, t, config.camera.orig);
+		t.y = t.y * cos(k) + t.z * sin(k);
+		t.z = -t.y * sin(k) + t.z * cos(k);
+		vadd(t, t, config.camera.orig);
+		config.camera.target = t;
+	}
+
+	void RotateCameraY(const float k) {
+		Vec t = config.camera.target;
+		vsub(t, t, config.camera.orig);
+		t.x = t.x * cos(k) - t.z * sin(k);
+		t.z = t.x * sin(k) + t.z * cos(k);
+		vadd(t, t, config.camera.orig);
+		config.camera.target = t;
+	}
+
 	void SpecialCallBack(int key, int x, int y) {
+		bool needRedisplay = true;
+
+		switch (key) {
+			case GLUT_KEY_UP:
+				RotateCameraX(-ROTATE_STEP);
+				break;
+			case GLUT_KEY_DOWN:
+				RotateCameraX(ROTATE_STEP);
+				break;
+			case GLUT_KEY_LEFT:
+				RotateCameraY(-ROTATE_STEP);
+				break;
+			case GLUT_KEY_RIGHT:
+				RotateCameraY(ROTATE_STEP);
+				break;
+			case GLUT_KEY_PAGE_UP:
+				config.camera.target.y += MOVE_STEP;
+				break;
+			case GLUT_KEY_PAGE_DOWN:
+				config.camera.target.y -= MOVE_STEP;
+				break;
+			default:
+				needRedisplay = false;
+				break;
+		}
+
+		if (needRedisplay) {
+			Update();
+			glutPostRedisplay();
+		}
 	}
 
 	void MouseCallBack(int button, int state, int x, int y) {
+		if (button == 0) {
+			if (state == GLUT_DOWN) {
+				// Record start position
+				mouseGrabLastX = x;
+				mouseGrabLastY = y;
+				mouseButton0 = true;
+
+				int mod = glutGetModifiers();
+				if (mod == GLUT_ACTIVE_SHIFT)
+					shiftMouseButton0 = true;
+				else {
+					shiftMouseButton0 = false;
+
+					const int ry = config.height - y - 1;
+					const int baseMu1 = config.width - MU_RECT_SIZE - 2;
+					const int baseMu2 = 1;
+					const int baseMu3 = config.width - MU_RECT_SIZE - 2;
+					const int baseMu4 = MU_RECT_SIZE + 2;
+
+					if ((x >= baseMu1 && x <= baseMu1 + MU_RECT_SIZE) &&
+							(ry >= baseMu2 && ry <= baseMu2 + MU_RECT_SIZE)) {
+						muMouseButton0 = true;
+						config.mu[0] = 3.f * (x - baseMu1) / (float) MU_RECT_SIZE - 1.5f;
+						config.mu[1] = 3.f * (ry - baseMu2) / (float) MU_RECT_SIZE - 1.5f;
+
+						Update();
+						glutPostRedisplay();
+					} else if ((x >= baseMu3 && x <= baseMu3 + MU_RECT_SIZE) &&
+							(ry >= baseMu4 && ry <= baseMu4 + MU_RECT_SIZE)) {
+						muMouseButton0 = true;
+						config.mu[2] = 3.f * (x - baseMu3) / (float) MU_RECT_SIZE - 1.5f;
+						config.mu[3] = 3.f * (ry - baseMu4) / (float) MU_RECT_SIZE - 1.5f;
+
+						Update();
+						glutPostRedisplay();
+					} else
+						muMouseButton0 = false;
+				}
+			} else if (state == GLUT_UP) {
+				mouseButton0 = false;
+				shiftMouseButton0 = false;
+				muMouseButton0 = false;
+			}
+		} else if (button == 2) {
+			if (state == GLUT_DOWN) {
+				// Record start position
+				mouseGrabLastX = x;
+				mouseGrabLastY = y;
+				mouseButton2 = true;
+			} else if (state == GLUT_UP) {
+				mouseButton2 = false;
+			}
+		}
 	}
 
 	virtual void MotionCallBack(int x, int y) {
+		bool needRedisplay = true;
+
+		if (mouseButton0) {
+			const int ry = config.height - y - 1;
+			const int baseMu1 = config.width - MU_RECT_SIZE - 2;
+			const int baseMu2 = 1;
+			const int baseMu3 = config.width - MU_RECT_SIZE - 2;
+			const int baseMu4 = MU_RECT_SIZE + 2;
+
+			// Check if the click was over first Mu red rectangle
+			if (muMouseButton0 && (x >= baseMu1 && x <= baseMu1 + MU_RECT_SIZE) &&
+					(ry >= baseMu2 && ry <= baseMu2 + MU_RECT_SIZE)) {
+				config.mu[0] = 3.f * (x - baseMu1) / (float)MU_RECT_SIZE - 1.5f;
+				config.mu[1] = 3.f * (ry - baseMu2) / (float)MU_RECT_SIZE - 1.5f;
+			} else if (muMouseButton0 && (x >= baseMu3 && x <= baseMu3 + MU_RECT_SIZE) &&
+					(ry >= baseMu4 && ry <= baseMu4 + MU_RECT_SIZE)) {
+				config.mu[2] = 3.f * (x - baseMu3) / (float)MU_RECT_SIZE - 1.5f;
+				config.mu[3] = 3.f * (ry - baseMu4) / (float)MU_RECT_SIZE - 1.5f;
+			} else if (!muMouseButton0) {
+				const int distX = x - mouseGrabLastX;
+				const int distY = y - mouseGrabLastY;
+
+				if (!shiftMouseButton0) {
+					vclr(config.camera.target);
+					RotateCameraYbyOrig(0.2f * distX * ROTATE_STEP);
+					RotateCameraXbyOrig(0.2f * distY * ROTATE_STEP);
+				} else {
+					RotateCameraY(0.1f * distX * ROTATE_STEP);
+					RotateCameraX(0.1f * distY * ROTATE_STEP);
+				}
+
+				mouseGrabLastX = x;
+				mouseGrabLastY = y;
+			}
+		} else if (mouseButton2) {
+			const int distX = x - mouseGrabLastX;
+			const int distY = y - mouseGrabLastY;
+
+			RotateLightX(-0.2f * distY * ROTATE_STEP);
+			RotateLightY(-0.2f * distX * ROTATE_STEP);
+
+			mouseGrabLastX = x;
+			mouseGrabLastY = y;
+		} else
+			needRedisplay = false;
+
+		if (needRedisplay) {
+			Update();
+
+			glutPostRedisplay();
+		}
 	}
 
 	//--------------------------------------------------------------------------
@@ -300,7 +636,9 @@ private:
 				pixels);
 
 		const double elapsedTime = WallClockTime() - startTime;
-		const double sampleSec = config.width * config.height / elapsedTime;
+		double sampleSec = config.width * config.height / elapsedTime;
+		if (!config.actvateFastRendering && (config.superSamplingSize > 1))
+			sampleSec *= config.superSamplingSize * config.superSamplingSize;
 		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK)") %
 				elapsedTime % (sampleSec / 1000.0));
 	}
@@ -318,24 +656,33 @@ private:
 		glRasterPos2i(60, 390);
 		PrintString(GLUT_BITMAP_HELVETICA_18, "h - toggle Help");
 		glRasterPos2i(60, 360);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "arrow Keys - move left/right/up/down");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "arrow Keys - rotate camera");
 		glRasterPos2i(60, 330);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "PageUp and PageDown - zoom in/out");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 0 + Mouse X, Y - rotate camera around the center");
 		glRasterPos2i(60, 300);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 0 + Mouse X, Y - move left/right/up/down");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Shift + Mouse button 0 + Mouse X, Y - rotate camera");
 		glRasterPos2i(60, 270);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 2 + Mouse X - zoom in/out");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 2 + Mouse X, Y - rotate light");
 		glRasterPos2i(60, 240);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "+ - increase the max. interations by 32");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "a, s, d, w - move camera");
 		glRasterPos2i(60, 210);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "- - decrease the max. interations by 32");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "1, 2 - decrease, increase epsilon");
 		glRasterPos2i(60, 180);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "s - save image.ppm");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "3, 4 - decrease, increase max. iterations");
+		glRasterPos2i(60, 150);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "5, 6 - decrease, increase samples per pixel");
+		glRasterPos2i(60, 120);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 0 on red rectangles - change Mu values");
+		glRasterPos2i(60, 90);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "l - toggle shadow/AO");
+		glRasterPos2i(60, 60);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "p - save image.ppm");
 
 		glDisable(GL_BLEND);
 	}
 
-	int mouseButton0, mouseButton2, mouseGrabLastX, mouseGrabLastY;
+	bool mouseButton0, mouseButton2, shiftMouseButton0, muMouseButton0;
+	int mouseGrabLastX, mouseGrabLastY;
 
 	float *pixels;
 	cl::Buffer *pixelsBuff;

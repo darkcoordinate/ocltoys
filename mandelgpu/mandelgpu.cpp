@@ -33,7 +33,7 @@ class MandelGPU : public OCLToy {
 public:
 	MandelGPU() : OCLToy("MandelGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
 			scale(3.5f), offsetX(-.5f), offsetY(0.f), maxIterations(256),
-			mouseButton0(0), mouseButton2(0), mouseGrabLastX(0), mouseGrabLastY(0),
+			mouseButton0(false), mouseButton2(false), mouseGrabLastX(0), mouseGrabLastY(0),
 			pixels(NULL), pixelsBuff(NULL), workGroupSize(64) {
 	}
 	virtual ~MandelGPU() {
@@ -116,7 +116,7 @@ protected:
 		bool needRedisplay = true;
 
 		switch (key) {
-			case 's': {
+			case 'p': {
 				// Write image to PPM file
 				std::ofstream f("image.ppm", std::ofstream::trunc);
 				if (!f.good()) {
@@ -209,24 +209,24 @@ protected:
 				// Record start position
 				mouseGrabLastX = x;
 				mouseGrabLastY = y;
-				mouseButton0 = 1;
+				mouseButton0 = true;
 			} else if (state == GLUT_UP) {
-				mouseButton0 = 0;
+				mouseButton0 = false;
 			}
 		} else if (button == 2) {
 			if (state == GLUT_DOWN) {
 				// Record start position
 				mouseGrabLastX = x;
 				mouseGrabLastY = y;
-				mouseButton2 = 1;
+				mouseButton2 = true;
 			} else if (state == GLUT_UP) {
-				mouseButton2 = 0;
+				mouseButton2 = false;
 			}
 		}
 	}
 
 	virtual void MotionCallBack(int x, int y) {
-		int needRedisplay = 1;
+		bool needRedisplay = true;
 
 		if (mouseButton0) {
 			const int distX = x - mouseGrabLastX;
@@ -245,7 +245,7 @@ protected:
 			mouseGrabLastX = x;
 			mouseGrabLastY = y;
 		} else
-			needRedisplay = 0;
+			needRedisplay = false;
 
 		if (needRedisplay)
 			glutPostRedisplay();
@@ -373,14 +373,15 @@ private:
 		glRasterPos2i(60, 210);
 		PrintString(GLUT_BITMAP_HELVETICA_18, "- - decrease the max. interations by 32");
 		glRasterPos2i(60, 180);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "s - save image.ppm");
+		PrintString(GLUT_BITMAP_HELVETICA_18, "p - save image.ppm");
 
 		glDisable(GL_BLEND);
 	}
 
 	float scale, offsetX, offsetY;
 	int maxIterations;
-	int mouseButton0, mouseButton2, mouseGrabLastX, mouseGrabLastY;
+	bool mouseButton0, mouseButton2;
+	int mouseGrabLastX, mouseGrabLastY;
 
 	unsigned int *pixels;
 	cl::Buffer *pixelsBuff;
