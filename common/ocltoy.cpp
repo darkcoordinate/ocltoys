@@ -324,7 +324,7 @@ void OCLToy::AllocOCLBufferRW(const unsigned int deviceIndex, cl::Buffer **buff,
 	deviceUsedMemory[deviceIndex] += (*buff)->getInfo<CL_MEM_SIZE>();
 }
 
-void OCLToy::AllocOCLBufferW(const unsigned int deviceIndex, cl::Buffer **buff,
+void OCLToy::AllocOCLBufferWO(const unsigned int deviceIndex, cl::Buffer **buff,
 		const size_t size, const std::string &desc) {
 	cl::Device &oclDevice = selectedDevices[deviceIndex];
 

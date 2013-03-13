@@ -29,23 +29,47 @@
 #include <boost/filesystem.hpp>
 #include <boost/format.hpp>
 
-class MandelGPU : public OCLToy {
+#include "renderconfig.h"
+
+class JuliaGPU : public OCLToy {
 public:
-	MandelGPU() : OCLToy("MandelGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
-			scale(3.5f), offsetX(-.5f), offsetY(0.f), maxIterations(256),
+	JuliaGPU() : OCLToy("JuliaGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
 			mouseButton0(0), mouseButton2(0), mouseGrabLastX(0), mouseGrabLastY(0),
-			pixels(NULL), pixelsBuff(NULL), workGroupSize(64) {
+			pixels(NULL), pixelsBuff(NULL), configBuff(NULL), workGroupSize(64) {
+		config.width = 640;
+		config.height = 480;
+		config.enableShadow = 1;
+		config.superSamplingSize = 2;
+
+		config.actvateFastRendering = 1;
+		config.maxIterations = 9;
+		config.epsilon = 0.003f * 0.75f;
+
+		config.light[0] = 5.f;
+		config.light[1] = 10.f;
+		config.light[2] = 15.f;
+
+		config.mu[0] = -0.2f;
+		config.mu[1] = 0.4f;
+		config.mu[2] = -0.4f;
+		config.mu[3] = -0.4f;
+
+		vinit(config.camera.orig, 1.f, 2.f, 8.f);
+		vinit(config.camera.target, 0.f, 0.f, 0.f);
+
+		UpdateCamera();
 	}
-	virtual ~MandelGPU() {
+
+	virtual ~JuliaGPU() {
 		FreeBuffers();
 	}
 
 protected:
 	boost::program_options::options_description GetOptionsDescriction() {
-		boost::program_options::options_description opts("MandelGPU options");
+		boost::program_options::options_description opts("JuliaGPU options");
 
 		opts.add_options()
-			("kernel,k", boost::program_options::value<std::string>()->default_value("rendering_kernel_float4.cl"),
+			("kernel,k", boost::program_options::value<std::string>()->default_value("rendering_kernel.cl"),
 				"OpenCL kernel file name")
 			("workgroupsize,z", boost::program_options::value<size_t>(), "OpenCL workgroup size");
 
@@ -54,11 +78,25 @@ protected:
 
 	virtual int RunToy() {
 		SetUpOpenCL();
-		UpdateMandel();
+		UpdateJulia();
 
 		glutMainLoop();
 
 		return EXIT_SUCCESS;
+	}
+
+	void UpdateCamera() {
+		vsub(config.camera.dir, config.camera.target, config.camera.orig);
+		vnorm(config.camera.dir);
+
+		const Vec up = { 0.f, 1.f, 0.f };
+		vxcross(config.camera.x, config.camera.dir, up);
+		vnorm(config.camera.x);
+		vsmul(config.camera.x, config.width * .5135f / config.height, config.camera.x);
+
+		vxcross(config.camera.y, config.camera.x, config.camera.dir);
+		vnorm(config.camera.y);
+		vsmul(config.camera.y, .5135f, config.camera.y);
 	}
 
 	//--------------------------------------------------------------------------
@@ -66,11 +104,11 @@ protected:
 	//--------------------------------------------------------------------------
 
 	virtual void DisplayCallBack() {
-		UpdateMandel();
+		UpdateJulia();
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glRasterPos2i(0, 0);
-		glDrawPixels(windowWidth, windowHeight, GL_LUMINANCE, GL_UNSIGNED_BYTE, pixels);
+		glDrawPixels(config.width, config.height, GL_RGB, GL_FLOAT, pixels);
 
 		// Title
 		glColor3f(1.f, 1.f, 1.f);
@@ -96,10 +134,7 @@ protected:
 	}
 
 	virtual void ReshapeCallBack(int newWidth, int newHeight) {
-		// Width must be a multiple of 4
 		windowWidth = newWidth;
-		if (windowWidth % 4 != 0)
-			windowWidth = (windowWidth / 4 + 1) * 4;
 		windowHeight = newHeight;
 
 		glViewport(0, 0, windowWidth, windowHeight);
@@ -123,12 +158,12 @@ protected:
 					OCLTOY_LOG("Failed to open image file: image.ppm");
 				} else {
 					f << "P3" << std::endl;
-					f << windowWidth << " " << windowHeight << std::endl;
+					f << config.width << " " << config.height << std::endl;
 					f << "255" << std::endl;
 
-					for (int y = windowHeight - 1; y >= 0; --y) {
-						const unsigned char *p = (unsigned char *)(&pixels[y * windowWidth / 4]);
-						for (int x = 0; x < windowWidth; ++x, p++) {
+					for (int y = (int)config.height - 1; y >= 0; --y) {
+						const unsigned char *p = (unsigned char *)(&pixels[y * config.width]);
+						for (int x = 0; x < (int)config.width; ++x, p++) {
 							const std::string value = boost::lexical_cast<std::string>((unsigned int)(*p));
 							f << value << " " << value << " " << value << std::endl;
 						}
@@ -146,12 +181,6 @@ protected:
 				OCLTOY_LOG("Done");
 				exit(EXIT_SUCCESS);
 				break;
-			case '+':
-				maxIterations += 32;
-				break;
-			case '-':
-				maxIterations -= 32;
-				break;
 			case ' ': // Refresh display
 				break;
 			case 'h':
@@ -163,92 +192,18 @@ protected:
 		}
 
 		if (needRedisplay) {
-			UpdateMandel();
+			UpdateJulia();
 			glutPostRedisplay();
 		}
 	}
 
 	void SpecialCallBack(int key, int x, int y) {
-#define SCALE_STEP (0.1f)
-#define OFFSET_STEP (0.025f)
-		bool needRedisplay = true;
-
-		switch (key) {
-			case GLUT_KEY_UP:
-				offsetY += scale * OFFSET_STEP;
-				break;
-			case GLUT_KEY_DOWN:
-				offsetY -= scale * OFFSET_STEP;
-				break;
-			case GLUT_KEY_LEFT:
-				offsetX -= scale * OFFSET_STEP;
-				break;
-			case GLUT_KEY_RIGHT:
-				offsetX += scale * OFFSET_STEP;
-				break;
-			case GLUT_KEY_PAGE_UP:
-				scale *= 1.f - SCALE_STEP;
-				break;
-			case GLUT_KEY_PAGE_DOWN:
-				scale *= 1.f + SCALE_STEP;
-				break;
-			default:
-				needRedisplay = false;
-				break;
-		}
-
-		if (needRedisplay) {
-			UpdateMandel();
-			glutPostRedisplay();
-		}
 	}
 
 	void MouseCallBack(int button, int state, int x, int y) {
-		if (button == 0) {
-			if (state == GLUT_DOWN) {
-				// Record start position
-				mouseGrabLastX = x;
-				mouseGrabLastY = y;
-				mouseButton0 = 1;
-			} else if (state == GLUT_UP) {
-				mouseButton0 = 0;
-			}
-		} else if (button == 2) {
-			if (state == GLUT_DOWN) {
-				// Record start position
-				mouseGrabLastX = x;
-				mouseGrabLastY = y;
-				mouseButton2 = 1;
-			} else if (state == GLUT_UP) {
-				mouseButton2 = 0;
-			}
-		}
 	}
 
 	virtual void MotionCallBack(int x, int y) {
-		int needRedisplay = 1;
-
-		if (mouseButton0) {
-			const int distX = x - mouseGrabLastX;
-			const int distY = y - mouseGrabLastY;
-
-			offsetX -= (40.f * distX / windowWidth) * scale * OFFSET_STEP;
-			offsetY += (40.f * distY / windowHeight) * scale * OFFSET_STEP;
-
-			mouseGrabLastX = x;
-			mouseGrabLastY = y;
-		} else if (mouseButton2) {
-			const int distX = x - mouseGrabLastX;
-
-			scale *= 1.0f - (2.f * distX / windowWidth);
-
-			mouseGrabLastX = x;
-			mouseGrabLastY = y;
-		} else
-			needRedisplay = 0;
-
-		if (needRedisplay)
-			glutPostRedisplay();
 	}
 
 	//--------------------------------------------------------------------------
@@ -283,7 +238,7 @@ private:
 		try {
 			VECTOR_CLASS<cl::Device> buildDevice;
 			buildDevice.push_back(oclDevice);
-			program.build(buildDevice);
+			program.build(buildDevice,"-I.");
 		} catch (cl::Error err) {
 			cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
 			OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());
@@ -291,8 +246,8 @@ private:
 			throw err;
 		}
 
-		kernelMandel = cl::Kernel(program, "mandelGPU");
-		kernelMandel.getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &workGroupSize);
+		kernelJulia = cl::Kernel(program, "JuliaGPU");
+		kernelJulia.getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &workGroupSize);
 		if (commandLineOpts.count("workgroupsize"))
 			workGroupSize = commandLineOpts["workgroupsize"].as<size_t>();
 		OCLTOY_LOG("Using workgroup size: " << workGroupSize);
@@ -301,37 +256,39 @@ private:
 	void FreeBuffers() {
 		FreeOCLBuffer(0, &pixelsBuff);
 		delete[] pixels;
+
+		FreeOCLBuffer(0, &configBuff);
 	}
 
 	void AllocateBuffers() {
 		delete[] pixels;
-		const int pixelCount = windowWidth * windowHeight;
-		const size_t size = pixelCount / 4 + 1;
-		pixels = new unsigned int[size];
-		std::fill(&pixels[0], &pixels[size], 0);
+		const int pixelCount = config.width * config.height;
+		const size_t size = pixelCount;
+		pixels = new float[size * 3];
+		std::fill(&pixels[0], &pixels[size * 3], 0);
 
-		AllocOCLBufferWO(0, &pixelsBuff, size * sizeof(unsigned int), "FrameBuffer");
+		AllocOCLBufferWO(0, &pixelsBuff, size * sizeof(float) * 3, "FrameBuffer");
+
+		AllocOCLBufferRO(0, &configBuff, &config, sizeof(RenderingConfig), "RenderingConfig");
 	}
 
-	void UpdateMandel() {
+	void UpdateJulia() {
 		const double startTime = WallClockTime();
 
 		// Set kernel arguments
-		kernelMandel.setArg(0, *pixelsBuff);
-		kernelMandel.setArg(1, windowWidth);
-		kernelMandel.setArg(2, windowHeight);
-		kernelMandel.setArg(3, scale);
-		kernelMandel.setArg(4, offsetX);
-		kernelMandel.setArg(5, offsetY);
-		kernelMandel.setArg(6, maxIterations);
+		kernelJulia.setArg(0, *pixelsBuff);
+		kernelJulia.setArg(1, *configBuff);
+		kernelJulia.setArg(2, 0);
+		kernelJulia.setArg(3, 0.f);
+		kernelJulia.setArg(4, 0.f);
 
 		// Enqueue a kernel run
-		size_t globalThreads = windowWidth * windowHeight / 4 + 1;
+		size_t globalThreads = config.width * config.height;
 		if (globalThreads % workGroupSize != 0)
 			globalThreads = (globalThreads / workGroupSize + 1) * workGroupSize;
 
 		cl::CommandQueue &oclQueue = deviceQueues[0];
-		oclQueue.enqueueNDRangeKernel(kernelMandel, cl::NullRange,
+		oclQueue.enqueueNDRangeKernel(kernelJulia, cl::NullRange,
 				cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
 
 		// Read back the result
@@ -343,9 +300,9 @@ private:
 				pixels);
 
 		const double elapsedTime = WallClockTime() - startTime;
-		const double sampleSec = windowHeight * windowWidth / elapsedTime;
-		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK Max. Iterations %d)") %
-				elapsedTime % (sampleSec / 1000.0) % maxIterations);
+		const double sampleSec = config.width * config.height / elapsedTime;
+		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK)") %
+				elapsedTime % (sampleSec / 1000.0));
 	}
 
 	void PrintHelp() {
@@ -378,20 +335,21 @@ private:
 		glDisable(GL_BLEND);
 	}
 
-	float scale, offsetX, offsetY;
-	int maxIterations;
 	int mouseButton0, mouseButton2, mouseGrabLastX, mouseGrabLastY;
 
-	unsigned int *pixels;
+	float *pixels;
 	cl::Buffer *pixelsBuff;
 
-	cl::Kernel kernelMandel;
+	RenderingConfig config;
+	cl::Buffer *configBuff;
+
+	cl::Kernel kernelJulia;
 	size_t workGroupSize;
 
 	std::string captionString;
 };
 
 int main(int argc, char **argv) {
-	MandelGPU toy;
+	JuliaGPU toy;
 	return toy.Run(argc, argv);
 }

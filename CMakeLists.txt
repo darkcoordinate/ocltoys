@@ -110,3 +110,4 @@ add_subdirectory(common)
 ###########################################################################
 
 add_subdirectory(mandelgpu)
+add_subdirectory(juliagpu)

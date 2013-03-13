@@ -68,7 +68,7 @@ protected:
 		void *src, const size_t size, const std::string &desc);
 	void AllocOCLBufferRW(const unsigned int deviceIndex, cl::Buffer **buff,
 		const size_t size, const std::string &desc);
-	void AllocOCLBufferW(const unsigned int deviceIndex, cl::Buffer **buff,
+	void AllocOCLBufferWO(const unsigned int deviceIndex, cl::Buffer **buff,
 		const size_t size, const std::string &desc);
 	void FreeOCLBuffer(const unsigned int deviceIndex, cl::Buffer **buff);
 
