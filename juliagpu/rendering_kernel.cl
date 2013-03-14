@@ -198,8 +198,9 @@ static float4 Phong(const float4 light, const float4 eye, const float4 pt,
 
 __kernel void JuliaGPU(
 	__global float *pixels,
-	__global RenderingConfig *config,
+	const __global RenderingConfig *config,
 	const int enableAccumulation,
+	const int sampleCount,
 	const float sampleX,
 	const float sampleY) {
     const int gid = get_global_id(0);
@@ -213,9 +214,9 @@ __kernel void JuliaGPU(
 	if (y >= height)
 		return;
 
-	const float epsilon = config->actvateFastRendering ? (config->epsilon * (1.f / 0.75f)) : config->epsilon;
+	const float epsilon = config->activateFastRendering ? (config->epsilon * (1.f / 0.75f)) : config->epsilon;
 	const uint maxIterations = max(1u,
-			config->actvateFastRendering ? (config->maxIterations - 1) : config->maxIterations);
+			config->activateFastRendering ? (config->maxIterations - 1) : config->maxIterations);
 
 	const float4 mu = (float4)(config->mu[0], config->mu[1], config->mu[2], config->mu[3]);
 	const float4 light = (float4)(config->light[0], config->light[1], config->light[2], 0.f);
@@ -339,6 +340,7 @@ __kernel void JuliaGPU(
 
 	int offset = 3 * (x + y * width);
 	color = clamp(color, (float4)(0.f, 0.f ,0.f, 0.f), (float4)(1.f, 1.f ,1.f, 0.f));
+	color /= sampleCount;
 	if (enableAccumulation) {
 		pixels[offset++] += color.s0;
 		pixels[offset++] += color.s1;

@@ -84,9 +84,9 @@ protected:
 	std::string windowTitle;
 	int windowWidth, windowHeight;
 
+	unsigned int millisTimerFunc;
 	bool printHelp;
 
-private:
 	// It is possible to run only a single Toy at time
 	static OCLToy *currentOCLToy;
 	static void GlutReshapeFunc(int newWidth, int newHeight);

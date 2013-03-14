@@ -82,7 +82,7 @@ void OCLToyDebugHandler(const char *msg) {
 }
 
 OCLToy::OCLToy(const std::string &winTitle) : windowTitle(winTitle),
-		windowWidth(800), windowHeight(600), printHelp(true) {
+		windowWidth(800), windowHeight(600), millisTimerFunc(0), printHelp(true) {
 	currentOCLToy = this;
 }
 
@@ -436,6 +436,8 @@ void OCLToy::InitGlut() {
 	glutDisplayFunc(&OCLToy::GlutDisplayFunc);
 	glutMouseFunc(&OCLToy::GlutMouseFunc);
 	glutMotionFunc(&OCLToy::GlutMotionFunc);
+	if (millisTimerFunc > 0)
+		glutTimerFunc(millisTimerFunc, &OCLToy::GlutTimerFunc, 0);
 
 	glMatrixMode(GL_PROJECTION);
 	glViewport(0, 0, windowWidth, windowHeight);

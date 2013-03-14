@@ -27,7 +27,7 @@
 typedef struct {
 	unsigned int width, height;
 	int superSamplingSize;
-	int actvateFastRendering;
+	int activateFastRendering;
 	int enableShadow;
 
 	unsigned int maxIterations;

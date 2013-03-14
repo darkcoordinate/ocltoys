@@ -42,7 +42,7 @@ public:
 		config.enableShadow = 1;
 		config.superSamplingSize = 2;
 
-		config.actvateFastRendering = 1;
+		config.activateFastRendering = 1;
 		config.maxIterations = 9;
 		config.epsilon = 0.003f * 0.75f;
 
@@ -59,6 +59,9 @@ public:
 		vinit(config.camera.target, 0.f, 0.f, 0.f);
 
 		UpdateCamera();
+
+		millisTimerFunc = 1000;
+		lastUserInputTime = WallClockTime();
 	}
 
 	virtual ~JuliaGPU() {
@@ -158,7 +161,7 @@ protected:
 		char captionString2[256];
 		sprintf(captionString2, "Shadow/AO %d - SuperSampling %dx%d - Fast rendering (%s)",
 				config.enableShadow, config.superSamplingSize, config.superSamplingSize,
-				config.actvateFastRendering ? "active" : "not active");
+				config.activateFastRendering ? "active" : "not active");
 		glRasterPos2i(4, 30);
 		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
 		// Caption line 2
@@ -215,18 +218,18 @@ protected:
 		glutSwapBuffers();
 	}
 
-	void Update(const bool allocateBuffers = false) {
+	void UpdateConfig(const bool allocateBuffers = false) {
 		if (allocateBuffers)
 			AllocateBuffers();
 
 		UpdateCamera();
 
-		// Send the new configuration to the OpenCL device
-		cl::CommandQueue &oclQueue = deviceQueues[0];
-		oclQueue.enqueueWriteBuffer(*configBuff, CL_FALSE, 0, configBuff->getInfo<CL_MEM_SIZE>(), &config);
-
-		UpdateJulia();
+		config.activateFastRendering = 1;
 	}
+
+	//--------------------------------------------------------------------------
+	// GLUT call backs
+	//--------------------------------------------------------------------------
 
 	virtual void ReshapeCallBack(int newWidth, int newHeight) {
 		windowWidth = newWidth;
@@ -239,9 +242,10 @@ protected:
 
 		config.width = windowWidth;
 		config.height = newHeight;
-		Update(true);
+		UpdateConfig(true);
 
 		glutPostRedisplay();
+		lastUserInputTime = WallClockTime();
 	}
 
 #define MOVE_STEP 0.5f
@@ -350,8 +354,9 @@ protected:
 		}
 
 		if (needRedisplay) {
-			Update();
+			UpdateConfig();
 			glutPostRedisplay();
+			lastUserInputTime = WallClockTime();
 		}
 	}
 
@@ -427,8 +432,9 @@ protected:
 		}
 
 		if (needRedisplay) {
-			Update();
+			UpdateConfig();
 			glutPostRedisplay();
+			lastUserInputTime = WallClockTime();
 		}
 	}
 
@@ -458,16 +464,18 @@ protected:
 						config.mu[0] = 3.f * (x - baseMu1) / (float) MU_RECT_SIZE - 1.5f;
 						config.mu[1] = 3.f * (ry - baseMu2) / (float) MU_RECT_SIZE - 1.5f;
 
-						Update();
+						UpdateConfig();
 						glutPostRedisplay();
+						lastUserInputTime = WallClockTime();
 					} else if ((x >= baseMu3 && x <= baseMu3 + MU_RECT_SIZE) &&
 							(ry >= baseMu4 && ry <= baseMu4 + MU_RECT_SIZE)) {
 						muMouseButton0 = true;
 						config.mu[2] = 3.f * (x - baseMu3) / (float) MU_RECT_SIZE - 1.5f;
 						config.mu[3] = 3.f * (ry - baseMu4) / (float) MU_RECT_SIZE - 1.5f;
 
-						Update();
+						UpdateConfig();
 						glutPostRedisplay();
+						lastUserInputTime = WallClockTime();
 					} else
 						muMouseButton0 = false;
 				}
@@ -536,10 +544,27 @@ protected:
 			needRedisplay = false;
 
 		if (needRedisplay) {
-			Update();
-
+			UpdateConfig();
 			glutPostRedisplay();
+			lastUserInputTime = WallClockTime();
 		}
+	}
+
+	void TimerCallBack(const int id) {
+		// Check the time since last screen update
+		const double elapsedTime = WallClockTime() - lastUserInputTime;
+
+		if (elapsedTime > 2.0) {
+			if (config.activateFastRendering) {
+				// Enable supersampling
+				config.activateFastRendering = 0;
+				glutPostRedisplay();
+			}
+		} else
+			config.activateFastRendering = 1;
+
+		// Refresh the timer
+		glutTimerFunc(millisTimerFunc, &OCLToy::GlutTimerFunc, 0);
 	}
 
 	//--------------------------------------------------------------------------
@@ -611,21 +636,49 @@ private:
 	void UpdateJulia() {
 		const double startTime = WallClockTime();
 
+		// Send the new configuration to the OpenCL device
+		cl::CommandQueue &oclQueue = deviceQueues[0];
+		oclQueue.enqueueWriteBuffer(*configBuff, CL_FALSE, 0, configBuff->getInfo<CL_MEM_SIZE>(), &config);
+
 		// Set kernel arguments
 		kernelJulia.setArg(0, *pixelsBuff);
 		kernelJulia.setArg(1, *configBuff);
-		kernelJulia.setArg(2, 0);
-		kernelJulia.setArg(3, 0.f);
-		kernelJulia.setArg(4, 0.f);
 
 		// Enqueue a kernel run
 		size_t globalThreads = config.width * config.height;
 		if (globalThreads % workGroupSize != 0)
 			globalThreads = (globalThreads / workGroupSize + 1) * workGroupSize;
 
-		cl::CommandQueue &oclQueue = deviceQueues[0];
-		oclQueue.enqueueNDRangeKernel(kernelJulia, cl::NullRange,
-				cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
+		if (!config.activateFastRendering && (config.superSamplingSize > 1)) {
+			kernelJulia.setArg(3, config.superSamplingSize * config.superSamplingSize);
+
+			int x, y;
+			for (y = 0; y < config.superSamplingSize; ++y) {
+				for (x = 0; x < config.superSamplingSize; ++x) {
+					const float sampleX = (x + .5f) / config.superSamplingSize;
+					const float sampleY = (y + .5f) / config.superSamplingSize;
+
+					// First pass
+					if ((x == 0) && (y == 0))
+						kernelJulia.setArg(2, 0);
+					else
+						kernelJulia.setArg(2, 1);
+					kernelJulia.setArg(4, sampleX);
+					kernelJulia.setArg(5, sampleY);
+
+					oclQueue.enqueueNDRangeKernel(kernelJulia, cl::NullRange,
+							cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
+				}
+			}
+		} else {
+			kernelJulia.setArg(2, 0);
+			kernelJulia.setArg(3, 1);
+			kernelJulia.setArg(4, 0.f);
+			kernelJulia.setArg(5, 0.f);
+
+			oclQueue.enqueueNDRangeKernel(kernelJulia, cl::NullRange,
+					cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
+		}
 
 		// Read back the result
 		oclQueue.enqueueReadBuffer(
@@ -637,7 +690,7 @@ private:
 
 		const double elapsedTime = WallClockTime() - startTime;
 		double sampleSec = config.width * config.height / elapsedTime;
-		if (!config.actvateFastRendering && (config.superSamplingSize > 1))
+		if (!config.activateFastRendering && (config.superSamplingSize > 1))
 			sampleSec *= config.superSamplingSize * config.superSamplingSize;
 		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK)") %
 				elapsedTime % (sampleSec / 1000.0));
@@ -683,6 +736,7 @@ private:
 
 	bool mouseButton0, mouseButton2, shiftMouseButton0, muMouseButton0;
 	int mouseGrabLastX, mouseGrabLastY;
+	double lastUserInputTime;
 
 	float *pixels;
 	cl::Buffer *pixelsBuff;
