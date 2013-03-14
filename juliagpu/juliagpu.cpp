@@ -60,7 +60,7 @@ public:
 
 		UpdateCamera();
 
-		millisTimerFunc = 1000;
+		millisTimerFunc = 500;
 		lastUserInputTime = WallClockTime();
 	}
 
@@ -554,7 +554,7 @@ protected:
 		// Check the time since last screen update
 		const double elapsedTime = WallClockTime() - lastUserInputTime;
 
-		if (elapsedTime > 2.0) {
+		if (elapsedTime > 1.0) {
 			if (config.activateFastRendering) {
 				// Enable supersampling
 				config.activateFastRendering = 0;

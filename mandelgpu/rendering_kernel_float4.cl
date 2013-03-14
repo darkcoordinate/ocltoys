@@ -85,14 +85,7 @@ __kernel void mandelGPU(
 		const float4 x2y2 = x2 + y2;
 		const int4 notEscaped = (x2y2 <= (float4)4.f);
 		const int4 notMaxIter = (iter < maxIterations4);
-
-		// It looks like ATI's compiler is bugged and doesn't accept: notEscaped && notMaxIter;
-		// And for some unknown reason (notEscaped & notMaxIter) is very very slow
-		//const int4 notHaveToExit = (notEscaped & notMaxIter);
-		const int4 notHaveToExit = (int4)(notEscaped.s0 & notMaxIter.s0,
-					notEscaped.s1 & notMaxIter.s1,
-				notEscaped.s2 & notMaxIter.s2,
-				notEscaped.s3 & notMaxIter.s3);
+		const int4 notHaveToExit = (notEscaped && notMaxIter);
 		if (!any(notHaveToExit))
 			break;
 

@@ -19,8 +19,6 @@
  *   OCLToys website: http://code.google.com/p/ocltoys                     *
  ***************************************************************************/
 
-#define GPU_KERNEL
-
 #include "renderconfig.h"
 
 #define BOUNDING_RADIUS_2 4.f
