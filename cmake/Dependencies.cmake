@@ -62,7 +62,6 @@ endif ()
 
 # Find OpenGL
 find_package(OpenGL)
-
 if (OPENGL_FOUND)
 	include_directories(SYSTEM ${OPENGL_INCLUDE_PATH})
 endif()

@@ -21,6 +21,7 @@
 
 #include "ocltoy.h"
 
+#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -363,34 +364,34 @@ protected:
 	void RotateLightX(const float k) {
 		const float y = config.light[1];
 		const float z = config.light[2];
-		config.light[1] = y * cos(k) + z * sin(k);
-		config.light[2] = -y * sin(k) + z * cos(k);
+		config.light[1] = y * cosf(k) + z * sinf(k);
+		config.light[2] = -y * sinf(k) + z * cosf(k);
 	}
 
 	void RotateLightY(const float k) {
 		const float x = config.light[0];
 		const float z = config.light[2];
-		config.light[0] = x * cos(k) - z * sin(k);
-		config.light[2] = x * sin(k) + z * cos(k);
+		config.light[0] = x * cosf(k) - z * sinf(k);
+		config.light[2] = x * sinf(k) + z * cosf(k);
 	}
 
 	void RotateCameraXbyOrig(const float k) {
 		Vec t = config.camera.orig;
-		config.camera.orig.y = t.y * cos(k) + t.z * sin(k);
-		config.camera.orig.z = -t.y * sin(k) + t.z * cos(k);
+		config.camera.orig.y = t.y * cosf(k) + t.z * sinf(k);
+		config.camera.orig.z = -t.y * sinf(k) + t.z * cosf(k);
 	}
 
 	void RotateCameraYbyOrig(const float k) {
 		Vec t = config.camera.orig;
-		config.camera.orig.x = t.x * cos(k) - t.z * sin(k);
-		config.camera.orig.z = t.x * sin(k) + t.z * cos(k);
+		config.camera.orig.x = t.x * cosf(k) - t.z * sinf(k);
+		config.camera.orig.z = t.x * sinf(k) + t.z * cosf(k);
 	}
 
 	void RotateCameraX(const float k) {
 		Vec t = config.camera.target;
 		vsub(t, t, config.camera.orig);
-		t.y = t.y * cos(k) + t.z * sin(k);
-		t.z = -t.y * sin(k) + t.z * cos(k);
+		t.y = t.y * cosf(k) + t.z * sinf(k);
+		t.z = -t.y * sinf(k) + t.z * cosf(k);
 		vadd(t, t, config.camera.orig);
 		config.camera.target = t;
 	}
@@ -398,8 +399,8 @@ protected:
 	void RotateCameraY(const float k) {
 		Vec t = config.camera.target;
 		vsub(t, t, config.camera.orig);
-		t.x = t.x * cos(k) - t.z * sin(k);
-		t.z = t.x * sin(k) + t.z * cos(k);
+		t.x = t.x * cosf(k) - t.z * sinf(k);
+		t.z = t.x * sinf(k) + t.z * cosf(k);
 		vadd(t, t, config.camera.orig);
 		config.camera.target = t;
 	}
