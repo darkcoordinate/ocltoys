@@ -91,10 +91,6 @@ if (NOT GLUT_FOUND)
 	MESSAGE(FATAL_ERROR "--> Could not locate required GLUT files - Please check ${GLUT_SEARCH_PATH}")
 endif()
 
-if (NOT GLEW_FOUND)
-	MESSAGE(FATAL_ERROR "--> Could not locate required GLEW files - Please check ${GLEW_SEARCH_PATH}")
-endif()
-
 ###########################################################################
 #
 # Common Library

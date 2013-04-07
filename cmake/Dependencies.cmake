@@ -68,18 +68,6 @@ endif()
 
 #######################################################################
 
-set(GLEW_ROOT                  "${GLEW_SEARCH_PATH}")
-if(NOT APPLE)
-	find_package(GLEW)
-endif()
-
-# GLEW
-if (GLEW_FOUND)
-	include_directories(SYSTEM ${GLEW_INCLUDE_PATH})
-endif ()
-
-#######################################################################
-
 set(GLUT_ROOT                  "${GLUT_SEARCH_PATH}")
 find_package(GLUT)
 
