@@ -40,13 +40,5 @@ typedef struct {
 #define vfilter(v) ((v).x > (v).y && (v).x > (v).z ? (v).x : (v).y > (v).z ? (v).y : (v).z)
 #define viszero(v) (((v).x == 0.f) && ((v).x == 0.f) && ((v).z == 0.f))
 
-#ifndef GPU_KERNEL
-#define clamp(x, a, b) ((x) < (a) ? (a) : ((x) > (b) ? (b) : (x)))
-#define max(x, y) ( (x) > (y) ? (x) : (y))
-#define min(x, y) ( (x) < (y) ? (x) : (y))
-#endif
-
-#define toInt(x) ((int)(clamp(x, 0.f, 1.f) * 255.f + .5f))
-
 #endif	/* _VEC_H */
 

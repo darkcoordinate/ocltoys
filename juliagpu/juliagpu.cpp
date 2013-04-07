@@ -25,6 +25,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <algorithm>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/filesystem.hpp>
@@ -266,13 +267,18 @@ protected:
 					f << "255" << std::endl;
 
 					for (int y = (int)config.height - 1; y >= 0; --y) {
-						const unsigned char *p = (unsigned char *)(&pixels[y * config.width]);
-						for (int x = 0; x < (int)config.width; ++x, p++) {
-							const std::string value = boost::lexical_cast<std::string>((unsigned int)(*p));
-							f << value << " " << value << " " << value << std::endl;
+						const float *p = &pixels[y * config.width * 3];
+						for (int x = 0; x < (int)config.width; ++x) {
+							const float rv = std::min(std::max(*p++, 0.f), 1.f);
+							const std::string r = boost::lexical_cast<std::string>((int)(rv * 255.f + .5f));
+							const float gv = std::min(std::max(*p++, 0.f), 1.f);
+							const std::string g = boost::lexical_cast<std::string>((int)(gv * 255.f + .5f));
+							const float bv = std::min(std::max(*p++, 0.f), 1.f);
+							const std::string b = boost::lexical_cast<std::string>((int)(bv * 255.f + .5f));
+							f << r << " " << g << " " << b << std::endl;
 						}
 					}
-				}				
+				}			
 				f.close();
 				OCLTOY_LOG("Saved framebuffer in image.ppm");
 
@@ -338,16 +344,16 @@ protected:
 				config.epsilon *= 1.f / 0.75f;
 				break;
 			case '3':
-				config.maxIterations = max(1, config.maxIterations - 1);
+				config.maxIterations = std::max(1u, config.maxIterations - 1u);
 				break;
 			case '4':
-				config.maxIterations = min(12, config.maxIterations + 1);
+				config.maxIterations = std::min(12u, config.maxIterations + 1u);
 				break;
 			case '5':
-				config.superSamplingSize = max(1, config.superSamplingSize - 1);
+				config.superSamplingSize = std::max(1u, config.superSamplingSize - 1u);
 				break;
 			case '6':
-				config.superSamplingSize = min(5, config.superSamplingSize + 1);
+				config.superSamplingSize = std::min(5u, config.superSamplingSize + 1u);
 				break;
 			default:
 				needRedisplay = false;

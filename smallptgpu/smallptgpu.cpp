@@ -136,30 +136,35 @@ protected:
 		bool needRedisplay = true;
 
 		switch (key) {
-//			case 'p': {
-//				// Write image to PPM file
-//				std::ofstream f("image.ppm", std::ofstream::trunc);
-//				if (!f.good()) {
-//					OCLTOY_LOG("Failed to open image file: image.ppm");
-//				} else {
-//					f << "P3" << std::endl;
-//					f << windowWidth << " " << windowHeight << std::endl;
-//					f << "255" << std::endl;
-//
-//					for (int y = (int)windowHeight - 1; y >= 0; --y) {
-//						const unsigned char *p = (unsigned char *)(&pixels[y * windowWidth]);
-//						for (int x = 0; x < (int)windowWidth; ++x, p++) {
-//							const std::string value = boost::lexical_cast<std::string>((unsigned int)(*p));
-//							f << value << " " << value << " " << value << std::endl;
-//						}
-//					}
-//				}				
-//				f.close();
-//				OCLTOY_LOG("Saved framebuffer in image.ppm");
-//
-//				needRedisplay = false;
-//				break;
-//			}
+			case 'p': {
+				// Write image to PPM file
+				std::ofstream f("image.ppm", std::ofstream::trunc);
+				if (!f.good()) {
+					OCLTOY_LOG("Failed to open image file: image.ppm");
+				} else {
+					f << "P3" << std::endl;
+					f << windowWidth << " " << windowHeight << std::endl;
+					f << "255" << std::endl;
+
+					for (int y = (int)windowHeight - 1; y >= 0; --y) {
+						const float *p = &pixels[y * windowWidth * 3];
+						for (int x = 0; x < (int)windowWidth; ++x) {
+							const float rv = std::min(std::max(*p++, 0.f), 1.f);
+							const std::string r = boost::lexical_cast<std::string>((int)(rv * 255.f + .5f));
+							const float gv = std::min(std::max(*p++, 0.f), 1.f);
+							const std::string g = boost::lexical_cast<std::string>((int)(gv * 255.f + .5f));
+							const float bv = std::min(std::max(*p++, 0.f), 1.f);
+							const std::string b = boost::lexical_cast<std::string>((int)(bv * 255.f + .5f));
+							f << r << " " << g << " " << b << std::endl;
+						}
+					}
+				}
+				f.close();
+				OCLTOY_LOG("Saved framebuffer in image.ppm");
+
+				needRedisplay = false;
+				break;
+			}
 			case 27: // Escape key
 			case 'q':
 			case 'Q':
