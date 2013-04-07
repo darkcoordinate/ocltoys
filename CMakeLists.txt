@@ -111,3 +111,4 @@ add_subdirectory(common)
 
 add_subdirectory(mandelgpu)
 add_subdirectory(juliagpu)
+add_subdirectory(smallptgpu)

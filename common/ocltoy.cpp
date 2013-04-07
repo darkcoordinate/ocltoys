@@ -82,7 +82,8 @@ void OCLToyDebugHandler(const char *msg) {
 }
 
 OCLToy::OCLToy(const std::string &winTitle) : windowTitle(winTitle),
-		windowWidth(800), windowHeight(600), millisTimerFunc(0), printHelp(true) {
+		windowWidth(800), windowHeight(600), millisTimerFunc(0), useIdleCallback(false),
+		printHelp(true) {
 	currentOCLToy = this;
 }
 
@@ -265,11 +266,10 @@ void OCLToy::AllocOCLBufferRO(const unsigned int deviceIndex, cl::Buffer **buff,
 
 	if (*buff) {
 		// Check the size of the already allocated buffer
-
 		if (size == (*buff)->getInfo<CL_MEM_SIZE>()) {
 			// I can reuse the buffer; just update the content
 
-			deviceQueues[deviceIndex].enqueueWriteBuffer(**buff, CL_FALSE, 0, size, src);
+			deviceQueues[deviceIndex].enqueueWriteBuffer(**buff, CL_TRUE, 0, size, src);
 			return;
 		} else {
 			// Free the buffer
@@ -303,7 +303,6 @@ void OCLToy::AllocOCLBufferRW(const unsigned int deviceIndex, cl::Buffer **buff,
 
 	if (*buff) {
 		// Check the size of the already allocated buffer
-
 		if (size == (*buff)->getInfo<CL_MEM_SIZE>()) {
 			// I can reuse the buffer
 			return;
@@ -339,7 +338,6 @@ void OCLToy::AllocOCLBufferWO(const unsigned int deviceIndex, cl::Buffer **buff,
 
 	if (*buff) {
 		// Check the size of the already allocated buffer
-
 		if (size == (*buff)->getInfo<CL_MEM_SIZE>()) {
 			// I can reuse the buffer
 			return;
@@ -417,6 +415,10 @@ void OCLToy::GlutMotionFunc(int x, int y) {
 	currentOCLToy->MotionCallBack(x, y);
 }
 
+void OCLToy::GlutIdleFunc() {
+	currentOCLToy->IdleCallBack();
+}
+
 void OCLToy::InitGlut() {
 	glutInitWindowSize(windowWidth, windowHeight);
 	// Center the window
@@ -438,6 +440,8 @@ void OCLToy::InitGlut() {
 	glutMotionFunc(&OCLToy::GlutMotionFunc);
 	if (millisTimerFunc > 0)
 		glutTimerFunc(millisTimerFunc, &OCLToy::GlutTimerFunc, 0);
+	if (useIdleCallback)
+		glutIdleFunc(&OCLToy::GlutIdleFunc);
 
 	glMatrixMode(GL_PROJECTION);
 	glViewport(0, 0, windowWidth, windowHeight);

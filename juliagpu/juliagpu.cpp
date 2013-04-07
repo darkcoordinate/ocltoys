@@ -38,8 +38,8 @@ public:
 			mouseButton0(false), mouseButton2(false), shiftMouseButton0(false), muMouseButton0(false),
 			mouseGrabLastX(0), mouseGrabLastY(0),
 			pixels(NULL), pixelsBuff(NULL), configBuff(NULL), workGroupSize(64) {
-		config.width = 640;
-		config.height = 480;
+		config.width = windowWidth;
+		config.height = windowHeight;
 		config.enableShadow = 1;
 		config.superSamplingSize = 2;
 
@@ -624,10 +624,9 @@ private:
 
 	void AllocateBuffers() {
 		delete[] pixels;
-		const int pixelCount = config.width * config.height;
-		const size_t size = pixelCount;
+		const size_t size = config.width * config.height;
 		pixels = new float[size * 3];
-		std::fill(&pixels[0], &pixels[size * 3], 0);
+		std::fill(&pixels[0], &pixels[size * 3], 0.f);
 
 		AllocOCLBufferWO(0, &pixelsBuff, size * sizeof(float) * 3, "FrameBuffer");
 

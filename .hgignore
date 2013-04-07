@@ -2,6 +2,7 @@
 ^common/libocltoys_common.a$
 ^mandelgpu/mandelgpu$
 ^juliagpu/juliagpu$
+^smallptgpu/smallptgpu$
 ^.dep.inc
 syntax: glob
 *~

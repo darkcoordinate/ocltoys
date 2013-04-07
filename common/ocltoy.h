@@ -53,6 +53,7 @@ protected:
 	virtual void SpecialCallBack(int key, int x, int y) { }
 	virtual void MouseCallBack(int button, int state, int x, int y) { }
 	virtual void MotionCallBack(int x, int y) { }
+	virtual void IdleCallBack() { }
 
 	virtual void InitGlut();
 
@@ -85,7 +86,7 @@ protected:
 	int windowWidth, windowHeight;
 
 	unsigned int millisTimerFunc;
-	bool printHelp;
+	bool useIdleCallback, printHelp;
 
 	// It is possible to run only a single Toy at time
 	static OCLToy *currentOCLToy;
@@ -96,6 +97,7 @@ protected:
 	static void GlutSpecialFunc(int key, int x, int y);
 	static void GlutMouseFunc(int button, int state, int x, int y);
 	static void GlutMotionFunc(int x, int y);
+	static void GlutIdleFunc();
 };
 
 #endif	/* OCLTOY_H */
