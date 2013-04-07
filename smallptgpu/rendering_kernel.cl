@@ -165,55 +165,6 @@ int IntersectP(
 	return 0;
 }
 
-void SampleLights(
-	__global const Sphere *spheres,
-	const unsigned int sphereCount,
-	unsigned int *seed0, unsigned int *seed1,
-	const Vec *hitPoint,
-	const Vec *normal,
-	Vec *result) {
-	vclr(*result);
-
-	/* For each light */
-	unsigned int i;
-	for (i = 0; i < sphereCount; i++) {
-		__global const Sphere *light = &spheres[i];
-		if (!viszero(light->e)) {
-			/* It is a light source */
-			Ray shadowRay;
-			shadowRay.o = *hitPoint;
-
-			/* Choose a point over the light source */
-			Vec unitSpherePoint;
-			UniformSampleSphere(GetRandom(seed0, seed1), GetRandom(seed0, seed1), &unitSpherePoint);
-			Vec spherePoint;
-			vsmul(spherePoint, light->rad, unitSpherePoint);
-			vadd(spherePoint, spherePoint, light->p);
-
-			/* Build the shadow ray direction */
-			vsub(shadowRay.d, spherePoint, *hitPoint);
-			const float len = sqrt(vdot(shadowRay.d, shadowRay.d));
-			vsmul(shadowRay.d, 1.f / len, shadowRay.d);
-
-			float wo = vdot(shadowRay.d, unitSpherePoint);
-			if (wo > 0.f) {
-				/* It is on the other half of the sphere */
-				continue;
-			} else
-				wo = -wo;
-
-			/* Check if the light is visible */
-			const float wi = vdot(shadowRay.d, *normal);
-			if ((wi > 0.f) && (!IntersectP(spheres, sphereCount, &shadowRay, len - EPSILON))) {
-				Vec c; vassign(c, light->e);
-				const float s = (4.f * FLOAT_PI * light->rad * light->rad) * wi * wo / (len *len);
-				vsmul(c, s, c);
-				vadd(*result, *result, c);
-			}
-		}
-	}
-}
-
 void Radiance(
 	__global const Sphere *spheres,
 	const unsigned int sphereCount,
@@ -225,7 +176,6 @@ void Radiance(
 	Vec throughput; vinit(throughput, 1.f, 1.f, 1.f);
 
 	unsigned int depth = 0;
-	int specularBounce = 1;
 	for (;; ++depth) {
 		// Removed Russian Roulette in order to improve execution on SIMT
 		if (depth > 6) {
@@ -259,28 +209,16 @@ void Radiance(
 		/* Add emitted light */
 		Vec eCol; vassign(eCol, obj->e);
 		if (!viszero(eCol)) {
-			if (specularBounce) {
-				vsmul(eCol, fabs(dp), eCol);
-				vmul(eCol, throughput, eCol);
-				vadd(rad, rad, eCol);
-			}
+			vsmul(eCol, fabs(dp), eCol);
+			vmul(eCol, throughput, eCol);
+			vadd(rad, rad, eCol);
 
 			*result = rad;
 			return;
 		}
 
 		if (obj->refl == DIFF) { /* Ideal DIFFUSE reflection */
-			specularBounce = 0;
 			vmul(throughput, throughput, obj->c);
-
-			/* Direct lighting component */
-
-			Vec Ld;
-			SampleLights(spheres, sphereCount, seed0, seed1, &hitPoint, &nl, &Ld);
-			vmul(Ld, throughput, Ld);
-			vadd(rad, rad, Ld);
-
-			// Check if we have to stop
 
 			/* Diffuse component */
 
@@ -313,8 +251,6 @@ void Radiance(
 			currentRay.d = newDir;
 			continue;
 		} else if (obj->refl == SPEC) { /* Ideal SPECULAR reflection */
-			specularBounce = 1;
-
 			Vec newDir;
 			vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
 			vsub(newDir, currentRay.d, newDir);
@@ -324,8 +260,6 @@ void Radiance(
 			rinit(currentRay, hitPoint, newDir);
 			continue;
 		} else {
-			specularBounce = 1;
-
 			Vec newDir;
 			vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
 			vsub(newDir, currentRay.d, newDir);
