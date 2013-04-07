@@ -27,6 +27,7 @@ typedef struct {
 } Vec;
 
 #define vinit(v, a, b, c) { (v).x = a; (v).y = b; (v).z = c; }
+#define vassign(a, b) vinit(a, (b).x, (b).y, (b).z)
 #define vclr(v) vinit(v, 0.f, 0.f, 0.f)
 #define vadd(v, a, b) vinit(v, (a).x + (b).x, (a).y + (b).y, (a).z + (b).z)
 #define vsub(v, a, b) vinit(v, (a).x - (b).x, (a).y - (b).y, (a).z - (b).z)
@@ -41,4 +42,3 @@ typedef struct {
 #define viszero(v) (((v).x == 0.f) && ((v).x == 0.f) && ((v).z == 0.f))
 
 #endif	/* _VEC_H */
-

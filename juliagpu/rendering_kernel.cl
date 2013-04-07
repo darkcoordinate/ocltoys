@@ -88,7 +88,7 @@ static float IntersectJulia(const float4 eyeRayOrig, const float4 eyeRayDir,
 			break;
 
 		const float normZ = length(z);
-		dist = 0.5f * normZ * log(normZ) / normZP;
+		dist = .5f * normZ * log(normZ) / normZP;
 
 		r0 += eyeRayDir * dist;
 		s++;
@@ -138,7 +138,7 @@ float IntersectBoundingSphere(const float4 eyeRayOrig, const float4 eyeRayDir) {
 
 		if (t > 0.f) {
 			// We are inside, start from the ray origin
-			return 0.0f;
+			return 0.f;
 		} else
 			return -1.f;
 	}
@@ -184,10 +184,10 @@ static float4 Phong(const float4 light, const float4 eye, const float4 pt,
 		return diffuse * ambient;
 
 	const float specularExponent = 30.f;
-	const float specularity = 0.65f;
+	const float specularity = .65f;
 
 	float4 E = normalize(eye - pt);
-	float4 H = (L + E) * (float)0.5f;
+	float4 H = (L + E) * .5f;
 
 	return diffuse * NdotL +
 			specularity * pow(dot(N, H), specularExponent) +
@@ -273,10 +273,10 @@ __kernel void JuliaGPU(
 	float4 diffuse, n, color;
 	if ((distSet < 0.f) && (distFloor < 0.f)) {
 		// Sky hit
-		color = (float4)(0.f, 0.1f, 0.3f, 0.f);
+		color = (float4)(0.f, .1f, .3f, 0.f);
 	} else if ((distSet >= 0.f) && ((distFloor < 0.f) || (distSet <= distFloor))) {
 		// Set hit
-		diffuse = (float4) (1.f, 0.35f, 0.15f, 0.f);
+		diffuse = (float4) (1.f, .35f, .15f, 0.f);
 		n = NormEstimate(hitPoint, mu, distSet, maxIterations);
 		doShade = 1;
 	} else if ((distFloor >= 0.f) && ((distSet < 0.f) || (distFloor <= distSet))) {
@@ -288,9 +288,9 @@ __kernel void JuliaGPU(
 		const int ix = (hitPoint.x > 0.f) ? hitPoint.x : (1.f - hitPoint.x);
 		const int iz = (hitPoint.z > 0.f) ? hitPoint.z : (1.f - hitPoint.z);
 		if ((ix + iz) % 2)
-			diffuse = (float4) (0.75f, 0.75f, 0.75f, 0.f);
+			diffuse = (float4) (.75f, .75f, .75f, 0.f);
 		else
-			diffuse = (float4) (0.75f, 0.f, 0.f, 0.f);
+			diffuse = (float4) (.75f, 0.f, 0.f, 0.f);
 		doShade = 1;
 		useAO = 0;
 	}
@@ -317,9 +317,9 @@ __kernel void JuliaGPU(
 				if (shadowDistSet < epsilon) {
 					if (useAO) {
 						// Use steps count to simulate ambient occlusion
-						shadowFactor = 0.6f - min(steps / 255.f, 0.5f);
+						shadowFactor = .6f - min(steps / 255.f, .5f);
 					} else
-						shadowFactor = 0.6f;
+						shadowFactor = .6f;
 				}
 			} else
 				shadowDistSet = -1.f;
