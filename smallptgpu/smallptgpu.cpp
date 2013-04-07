@@ -40,7 +40,6 @@ public:
 			pixelsBuff(NULL), seedsBuff(NULL), cameraBuff(NULL), spheresBuff(NULL),
 			workGroupSize(64), pixels(NULL), currentSample(0) {
 		useIdleCallback = true;
-		millisTimerFunc = 500;
 		kernelIterations = 1;
 		sampleSec = 0.0;
 		lastUserInputTime = WallClockTime();
@@ -68,7 +67,7 @@ protected:
 		ReadScene(commandLineOpts["scene"].as<std::string>());
 
 		SetUpOpenCL();
-		UpdateCameraBuffers();
+		UpdateCameraBuffer();
 		UpdateRender();
 
 		glutMainLoop();
@@ -124,7 +123,8 @@ protected:
 				0.f, windowHeight - 1.f, -1.f, 1.f);
 
 		UpdateCamera();
-		UpdateCameraBuffers();
+		UpdateCameraBuffer();
+		ResizeFrameBuffer();
 
 		glutPostRedisplay();
 		lastUserInputTime = WallClockTime();
@@ -209,14 +209,6 @@ protected:
 		}
 	}
 
-	void TimerCallBack(const int id) {
-		// Check the time since last screen update
-		//const double elapsedTime = WallClockTime() - lastUserInputTime;
-
-		// Refresh the timer
-		glutTimerFunc(millisTimerFunc, &OCLToy::GlutTimerFunc, 0);
-	}
-
 	void IdleCallBack() {
 		glutPostRedisplay();
 	}
@@ -229,12 +221,6 @@ protected:
 
 private:
 	void SetUpOpenCL() {
-		//----------------------------------------------------------------------
-		// Allocate buffer
-		//----------------------------------------------------------------------
-
-		AllocateBuffers();
-
 		//----------------------------------------------------------------------
 		// Compile kernel
 		//----------------------------------------------------------------------
@@ -268,6 +254,12 @@ private:
 		OCLTOY_LOG("Using workgroup size: " << workGroupSize);
 		
 		//----------------------------------------------------------------------
+		// Allocate buffer
+		//----------------------------------------------------------------------
+
+		AllocateBuffers();
+
+		//----------------------------------------------------------------------
 		// Set kernel arguments
 		//----------------------------------------------------------------------
 
@@ -291,51 +283,11 @@ private:
 	}
 
 	void AllocateBuffers() {
-		cl::CommandQueue &oclQueue = deviceQueues[0];
-
 		// Allocate the frame buffer
-		delete[] pixels;
-		const size_t pixelCount = windowWidth * windowHeight;;
-		pixels = new float[pixelCount * 3];
-		std::fill(&pixels[0], &pixels[pixelCount * 3], 0.f);
-		AllocOCLBufferRW(0, &pixelsBuff, pixelCount * sizeof(float) * 3, "PixelsBuffer");
-
-		// Allocate the seeds for random number generator
-		AllocOCLBufferRW(0, &seedsBuff, pixelCount * sizeof(unsigned int) * 2, "SeedsBuffer");
-
-		unsigned int *seeds = new unsigned int[pixelCount * 2];
-		for (size_t i = 0; i < pixelCount * 2; i++) {
-			seeds[i] = rand();
-			if (seeds[i] < 2)
-				seeds[i] = 2;
-		}
-		oclQueue.enqueueWriteBuffer(*seedsBuff,
-				CL_TRUE,
-				0,
-				seedsBuff->getInfo<CL_MEM_SIZE>(),
-				seeds);
-		delete[] seeds;
+		ResizeFrameBuffer();
 
 		AllocOCLBufferRO(0, &cameraBuff, &camera, sizeof(Camera), "CameraBuffer");
 		AllocOCLBufferRO(0, &spheresBuff, &spheres[0], sizeof(Sphere) * spheres.size(), "SpheresBuffer");
-	}
-
-	void PrintHelp() {
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4f(0.f, 0.f, 0.5f, 0.5f);
-		glRecti(40, 40, 600, 440);
-
-		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(300, 420);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Help");
-
-		glRasterPos2i(60, 390);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "h - toggle Help");
-		glRasterPos2i(60, 360);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "p - save image.ppm");
-
-		glDisable(GL_BLEND);
 	}
 
 	void ReadScene(const std::string &fileName) {
@@ -437,7 +389,43 @@ private:
 		vsmul(camera.y, fov, camera.y);
 	}
 
-	void UpdateCameraBuffers() {
+	void ResizeFrameBuffer() {
+		cl::CommandQueue &oclQueue = deviceQueues[0];
+		const size_t pixelCount = windowWidth * windowHeight;
+
+		// Allocate the frame buffer
+		delete[] pixels;
+		pixels = new float[pixelCount * 3];
+		std::fill(&pixels[0], &pixels[pixelCount * 3], 0.f);
+		AllocOCLBufferRW(0, &pixelsBuff, pixelCount * sizeof(float) * 3, "PixelsBuffer");
+
+		// Allocate the seeds for random number generator
+		AllocOCLBufferRW(0, &seedsBuff, pixelCount * sizeof(unsigned int) * 2, "SeedsBuffer");
+
+		unsigned int *seeds = new unsigned int[pixelCount * 2];
+		for (size_t i = 0; i < pixelCount * 2; i++) {
+			seeds[i] = rand();
+			if (seeds[i] < 2)
+				seeds[i] = 2;
+		}
+		oclQueue.enqueueWriteBuffer(*seedsBuff,
+				CL_TRUE,
+				0,
+				seedsBuff->getInfo<CL_MEM_SIZE>(),
+				seeds);
+		delete[] seeds;
+
+		kernelSmallPT.setArg(0, *pixelsBuff);
+		kernelSmallPT.setArg(1, *seedsBuff);
+		kernelSmallPT.setArg(5, windowWidth);
+		kernelSmallPT.setArg(6, windowHeight);
+
+		// Better to restart load balancing
+		kernelIterations = 1;
+		currentSample = 0;
+	}
+
+	void UpdateCameraBuffer() {
 		cl::CommandQueue &oclQueue = deviceQueues[0];
 		oclQueue.enqueueWriteBuffer(*cameraBuff,
 				CL_FALSE,
@@ -485,6 +473,24 @@ private:
 			// Too slow, decrease the number of kernel iterations
 			kernelIterations = std::max(kernelIterations - 1u, 1u);
 		}
+	}
+
+	void PrintHelp() {
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(0.f, 0.f, 0.5f, 0.5f);
+		glRecti(40, 40, 600, 440);
+
+		glColor3f(1.f, 1.f, 1.f);
+		glRasterPos2i(300, 420);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Help");
+
+		glRasterPos2i(60, 390);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "h - toggle Help");
+		glRasterPos2i(60, 360);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "p - save image.ppm");
+
+		glDisable(GL_BLEND);
 	}
 
 	double lastUserInputTime;
