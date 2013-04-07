@@ -27,6 +27,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <algorithm>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/filesystem.hpp>
@@ -40,6 +41,8 @@ public:
 			workGroupSize(64), pixels(NULL), currentSample(0) {
 		useIdleCallback = true;
 		millisTimerFunc = 500;
+		kernelIterations = 1;
+		sampleSec = 0.0;
 		lastUserInputTime = WallClockTime();
 	}
 
@@ -446,17 +449,19 @@ private:
 	void UpdateRender() {
 		const double startTime = WallClockTime();
 
-		// Set kernel arguments
-		kernelSmallPT.setArg(7, currentSample++);
-
-		// Enqueue a kernel run
 		size_t globalThreads = windowWidth * windowHeight;
 		if (globalThreads % workGroupSize != 0)
 			globalThreads = (globalThreads / workGroupSize + 1) * workGroupSize;
 
 		cl::CommandQueue &oclQueue = deviceQueues[0];
-		oclQueue.enqueueNDRangeKernel(kernelSmallPT, cl::NullRange,
-				cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
+		for (unsigned int i = 0; i < kernelIterations; ++i) {
+			// Set kernel arguments
+			kernelSmallPT.setArg(7, currentSample++);
+
+			// Enqueue a kernel run
+			oclQueue.enqueueNDRangeKernel(kernelSmallPT, cl::NullRange,
+					cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
+		}
 
 		// Read back the result
 		oclQueue.enqueueReadBuffer(
@@ -467,9 +472,19 @@ private:
 				pixels);
 
 		const double elapsedTime = WallClockTime() - startTime;
-		double sampleSec = windowWidth * windowHeight / elapsedTime;
-		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK)") %
-				elapsedTime % (sampleSec / 1000.0));
+		// A simple trick to smooth sample/sec value
+		const double k = 0.1;
+		sampleSec = sampleSec * (1.0 - k) + k * (kernelIterations * windowWidth * windowHeight / elapsedTime);
+		captionString = boost::str(boost::format("Rendering time (%d iterations): %.3f secs (%.1fM Sample/sec)") %
+				kernelIterations % elapsedTime % (sampleSec / 1000000.0));
+
+		if (elapsedTime < 0.075) {
+			// Too fast, increase the number of kernel iterations
+			++kernelIterations;
+		} else if (elapsedTime > 0.1) {
+			// Too slow, decrease the number of kernel iterations
+			kernelIterations = std::max(kernelIterations - 1u, 1u);
+		}
 	}
 
 	double lastUserInputTime;
@@ -481,11 +496,13 @@ private:
 
 	cl::Kernel kernelSmallPT;
 	size_t workGroupSize;
+	unsigned int kernelIterations;
 
 	float *pixels;
 	Camera camera;
 	std::vector<Sphere> spheres;
 
+	double sampleSec;
 	unsigned int currentSample;
 	std::string captionString;
 };
