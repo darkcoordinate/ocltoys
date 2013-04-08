@@ -109,7 +109,8 @@ int OCLToy::Run(int argc, char **argv) {
 			("directory,d", boost::program_options::value<std::string>(), "Current directory path")
 			("ocldevices,o", boost::program_options::value<std::string>()->default_value("ALL_GPUS"),
 				"OpenCL device selection string. It can be ALL, ALL_GPUS, ALL_CPUS, FIRST_GPU, FIRST_CPU or a "
-				"binary string where 0 means disabled and 1 enabled (for instance, 1100 will use only the first and second devices of the 4 available)")
+				"binary string where 0 means disabled and 1 enabled (for instance, 1100 will use only the first "
+				"and second devices of the 4 available). NOTE: OpenCL accelerators are considered GPUs.")
 			("noscreenhelp,s", "Disable on screen help");
 
 		boost::program_options::options_description toyOpts = GetOptionsDescriction();
@@ -202,9 +203,12 @@ void OCLToy::SelectOpenCLDevices() {
 
 			bool selected = false;
 			if ((selectMethod == "ALL") ||
-				((selectMethod == "ALL_GPUS") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU)) ||
+				((selectMethod == "ALL_GPUS") &&
+					((devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU) || (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_ACCELERATOR))) ||
 				((selectMethod == "ALL_CPUS") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_CPU)) ||
-				((selectMethod == "FIRST_GPU") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU) && (selectedDevices.size() == 0)) ||
+				((selectMethod == "FIRST_GPU") &&
+					((devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU) || (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_ACCELERATOR)) &&
+					(selectedDevices.size() == 0)) ||
 				((selectMethod == "FIRST_CPU") && (devices[j].getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_CPU) && (selectedDevices.size() == 0)))
 				selected = true;
 			else if (boost::regex_match(selectMethod, selRegex)) {
