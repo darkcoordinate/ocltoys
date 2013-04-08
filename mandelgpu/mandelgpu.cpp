@@ -348,7 +348,7 @@ private:
 		const double elapsedTime = WallClockTime() - startTime;
 		const double sampleSec = windowHeight * windowWidth / elapsedTime;
 		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK Max. Iterations %d)") %
-				elapsedTime % (sampleSec / 1000.0) % maxIterations);
+			elapsedTime % (sampleSec / 1000.0) % maxIterations);
 	}
 
 	void PrintHelp() {

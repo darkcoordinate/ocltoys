@@ -19,6 +19,11 @@
  *   OCLToys website: http://code.google.com/p/ocltoys                     *
  ***************************************************************************/
 
+#if defined(WIN32)
+// Requires for M_PI
+#define _USE_MATH_DEFINES
+#endif
+
 #include "ocltoy.h"
 #include "camera.h"
 #include "geom.h"
@@ -132,7 +137,7 @@ protected:
 	}
 
 #define MOVE_STEP 0.5f
-#define ROTATE_STEP (2.f * M_PI / 180.f)
+#define ROTATE_STEP (2.f * ((float)M_PI) / 180.f)
 	virtual void KeyCallBack(unsigned char key, int x, int y) {
 		bool cameraUpdated = false;
 		bool sceneUpdated = false;
@@ -235,7 +240,7 @@ protected:
 				sceneUpdated = true;
 				break;
 			case '-':
-				currentSphere = (currentSphere + (spheres.size() - 1)) % spheres.size();
+				currentSphere = (currentSphere + (spheres.size() - 1)) % (unsigned int)spheres.size();
 				OCLTOY_LOG("Selected sphere " << currentSphere << " (" <<
 						spheres[currentSphere].p.x << " " <<
 						spheres[currentSphere].p.y << " " <<
@@ -298,8 +303,8 @@ protected:
 			case GLUT_KEY_UP: {
 				Vec t = camera.target;
 				vsub(t, t, camera.orig);
-				t.y = t.y * cos(-ROTATE_STEP) + t.z * sin(-ROTATE_STEP);
-				t.z = -t.y * sin(-ROTATE_STEP) + t.z * cos(-ROTATE_STEP);
+				t.y = t.y * cosf(-ROTATE_STEP) + t.z * sinf(-ROTATE_STEP);
+				t.z = -t.y * sinf(-ROTATE_STEP) + t.z * cosf(-ROTATE_STEP);
 				vadd(t, t, camera.orig);
 				camera.target = t;
 				cameraUpdated = true;
@@ -308,8 +313,8 @@ protected:
 			case GLUT_KEY_DOWN: {
 				Vec t = camera.target;
 				vsub(t, t, camera.orig);
-				t.y = t.y * cos(ROTATE_STEP) + t.z * sin(ROTATE_STEP);
-				t.z = -t.y * sin(ROTATE_STEP) + t.z * cos(ROTATE_STEP);
+				t.y = t.y * cosf(ROTATE_STEP) + t.z * sinf(ROTATE_STEP);
+				t.z = -t.y * sinf(ROTATE_STEP) + t.z * cosf(ROTATE_STEP);
 				vadd(t, t, camera.orig);
 				camera.target = t;
 				cameraUpdated = true;
@@ -318,8 +323,8 @@ protected:
 			case GLUT_KEY_LEFT: {
 				Vec t = camera.target;
 				vsub(t, t, camera.orig);
-				t.x = t.x * cos(-ROTATE_STEP) - t.z * sin(-ROTATE_STEP);
-				t.z = t.x * sin(-ROTATE_STEP) + t.z * cos(-ROTATE_STEP);
+				t.x = t.x * cosf(-ROTATE_STEP) - t.z * sinf(-ROTATE_STEP);
+				t.z = t.x * sinf(-ROTATE_STEP) + t.z * cosf(-ROTATE_STEP);
 				vadd(t, t, camera.orig);
 				camera.target = t;
 				cameraUpdated = true;
@@ -328,8 +333,8 @@ protected:
 			case GLUT_KEY_RIGHT: {
 				Vec t = camera.target;
 				vsub(t, t, camera.orig);
-				t.x = t.x * cos(ROTATE_STEP) - t.z * sin(ROTATE_STEP);
-				t.z = t.x * sin(ROTATE_STEP) + t.z * cos(ROTATE_STEP);
+				t.x = t.x * cosf(ROTATE_STEP) - t.z * sinf(ROTATE_STEP);
+				t.z = t.x * sinf(ROTATE_STEP) + t.z * cosf(ROTATE_STEP);
 				vadd(t, t, camera.orig);
 				camera.target = t;
 				cameraUpdated = true;

@@ -54,14 +54,20 @@ inline double WallClockTime() {
 
 	return t.tv_sec + t.tv_usec / 1000000.0;
 #elif defined (WIN32)
-	return GetTickCount() / 1000.0;
+	LARGE_INTEGER freq;
+    QueryPerformanceFrequency(&freq);
+	LARGE_INTEGER ts;
+	QueryPerformanceCounter(&ts);
+	return ts.QuadPart / (double)freq.QuadPart;
+
+	//return GetTickCount() / 1000.0;
 #else
 #error "Unsupported Platform !!!"
 #endif
 }
 
 template <class T> inline T RoundUp(const T a, const T b) {
-        const unsigned int r = a % b;
+        const T r = a % b;
         if (r == 0)
                 return a;
         else

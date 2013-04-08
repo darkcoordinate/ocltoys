@@ -19,6 +19,11 @@
  *   OCLToys website: http://code.google.com/p/ocltoys                     *
  ***************************************************************************/
 
+#if defined(WIN32)
+// Requires for M_PI
+#define _USE_MATH_DEFINES
+#endif
+
 #include "ocltoy.h"
 
 #include <cmath>
@@ -189,8 +194,8 @@ protected:
 		glDisable(GL_BLEND);
 
 		glColor3f(1.f, 1.f, 1.f);
-		const int mu1 = baseMu1 + MU_RECT_SIZE * (config.mu[0] + 1.5f) / 3.f;
-		const int mu2 = baseMu2 + MU_RECT_SIZE * (config.mu[1] + 1.5f) / 3.f;
+		const int mu1 = (int)(baseMu1 + MU_RECT_SIZE * (config.mu[0] + 1.5f) / 3.f);
+		const int mu2 = (int)(baseMu2 + MU_RECT_SIZE * (config.mu[1] + 1.5f) / 3.f);
 		glBegin(GL_LINES);
 		glVertex2i(mu1 - 4, mu2);
 		glVertex2i(mu1 + 4, mu2);
@@ -198,8 +203,8 @@ protected:
 		glVertex2i(mu1, mu2 + 4);
 		glEnd();
 
-		const int mu3 = baseMu3 + MU_RECT_SIZE * (config.mu[2] + 1.5f) / 3.f;
-		const int mu4 = baseMu4 + MU_RECT_SIZE * (config.mu[3] + 1.5f) / 3.f;
+		const int mu3 = (int)(baseMu3 + MU_RECT_SIZE * (config.mu[2] + 1.5f) / 3.f);
+		const int mu4 = (int)(baseMu4 + MU_RECT_SIZE * (config.mu[3] + 1.5f) / 3.f);
 		glBegin(GL_LINES);
 		glVertex2i(mu3 - 4, mu4);
 		glVertex2i(mu3 + 4, mu4);
@@ -251,7 +256,7 @@ protected:
 	}
 
 #define MOVE_STEP 0.5f
-#define ROTATE_STEP (2.f * M_PI / 180.f)
+#define ROTATE_STEP (2.f * ((float)M_PI) / 180.f)
 	virtual void KeyCallBack(unsigned char key, int x, int y) {
 		bool needRedisplay = true;
 
@@ -557,7 +562,7 @@ protected:
 		}
 	}
 
-	void TimerCallBack(const int id) {
+	void TimerCallBack(int id) {
 		// Check the time since last screen update
 		const double elapsedTime = WallClockTime() - lastUserInputTime;
 
@@ -606,7 +611,7 @@ private:
 		try {
 			VECTOR_CLASS<cl::Device> buildDevice;
 			buildDevice.push_back(oclDevice);
-			program.build(buildDevice,"-I. -I../common");
+			program.build(buildDevice,"-I. -I../common -I..\\common");
 		} catch (cl::Error err) {
 			cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
 			OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());
@@ -699,7 +704,7 @@ private:
 		if (!config.activateFastRendering && (config.superSamplingSize > 1))
 			sampleSec *= config.superSamplingSize * config.superSamplingSize;
 		captionString = boost::str(boost::format("Rendering time: %.3f secs (Sample/sec %.1fK)") %
-				elapsedTime % (sampleSec / 1000.0));
+			elapsedTime % (sampleSec / 1000.0));
 	}
 
 	void PrintHelp() {
