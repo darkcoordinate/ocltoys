@@ -47,12 +47,16 @@ protected:
 		opts.add_options()
 			("kernel,k", boost::program_options::value<std::string>()->default_value("rendering_kernel_float4.cl"),
 				"OpenCL kernel file name")
+			("iterations,i", boost::program_options::value<unsigned int>()->default_value(256u),
+				"Number of iterations")
 			("workgroupsize,z", boost::program_options::value<size_t>(), "OpenCL workgroup size");
 
 		return opts;
 	}
 
 	virtual int RunToy() {
+		maxIterations = commandLineOpts["iterations"].as<unsigned int>();
+
 		SetUpOpenCL();
 		UpdateMandel();
 
