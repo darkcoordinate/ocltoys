@@ -38,7 +38,7 @@ class SmallPTGPU : public OCLToy {
 public:
 	SmallPTGPU() : OCLToy("SmallPTGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
 			samplesBuff(NULL), pixelsBuff(NULL), seedsBuff(NULL), cameraBuff(NULL),
-			spheresBuff(NULL), kernelWorkGroupSize(64), pixels(NULL), currentSample(0) {
+			spheresBuff(NULL), kernelWorkGroupSize(64), pixels(NULL), currentSample(0), currentSphere(0) {
 		useIdleCallback = true;
 		kernelIterations = 1;
 		sampleSec = 0.0;
@@ -134,6 +134,8 @@ protected:
 #define MOVE_STEP 0.5f
 #define ROTATE_STEP (2.f * M_PI / 180.f)
 	virtual void KeyCallBack(unsigned char key, int x, int y) {
+		bool cameraUpdated = false;
+		bool sceneUpdated = false;
 		bool needRedisplay = true;
 
 		switch (key) {
@@ -172,14 +174,114 @@ protected:
 				OCLTOY_LOG("Done");
 				exit(EXIT_SUCCESS);
 				break;
-			case ' ': // Refresh display
+			case ' ': // Restart rendering
+				currentSample = 0;
 				break;
 			case 'h':
 				printHelp = (!printHelp);
 				break;
+			case 'a': {
+				Vec dir = camera.x;
+				vnorm(dir);
+				vsmul(dir, -MOVE_STEP, dir);
+				vadd(camera.orig, camera.orig, dir);
+				vadd(camera.target, camera.target, dir);
+				cameraUpdated = true;
+				break;
+			}
+			case 'd': {
+				Vec dir = camera.x;
+				vnorm(dir);
+				vsmul(dir, MOVE_STEP, dir);
+				vadd(camera.orig, camera.orig, dir);
+				vadd(camera.target, camera.target, dir);
+				cameraUpdated = true;
+				break;
+			}
+			case 'w': {
+				Vec dir = camera.dir;
+				vsmul(dir, MOVE_STEP, dir);
+				vadd(camera.orig, camera.orig, dir);
+				vadd(camera.target, camera.target, dir);
+				cameraUpdated = true;
+				break;
+			}
+			case 's': {
+				Vec dir = camera.dir;
+				vsmul(dir, -MOVE_STEP, dir);
+				vadd(camera.orig, camera.orig, dir);
+				vadd(camera.target, camera.target, dir);
+				cameraUpdated = true;
+				break;
+			}
+			case 'r': {
+				camera.orig.y += MOVE_STEP;
+				camera.target.y += MOVE_STEP;
+				cameraUpdated = true;
+				break;
+			}
+			case 'f': {
+				camera.orig.y -= MOVE_STEP;
+				camera.target.y -= MOVE_STEP;
+				cameraUpdated = true;
+				break;
+			}
+			case '+':
+				currentSphere = (currentSphere + 1) % spheres.size();
+				OCLTOY_LOG("Selected sphere " << currentSphere << " (" <<
+						spheres[currentSphere].p.x << " " <<
+						spheres[currentSphere].p.y << " " <<
+						spheres[currentSphere].p.z << ")");
+				sceneUpdated = true;
+				break;
+			case '-':
+				currentSphere = (currentSphere + (spheres.size() - 1)) % spheres.size();
+				OCLTOY_LOG("Selected sphere " << currentSphere << " (" <<
+						spheres[currentSphere].p.x << " " <<
+						spheres[currentSphere].p.y << " " <<
+						spheres[currentSphere].p.z << ")");
+				sceneUpdated = true;
+				break;
+			case '4':
+				spheres[currentSphere].p.x -= 0.5f * MOVE_STEP;
+				sceneUpdated = true;
+				break;
+			case '6':
+				spheres[currentSphere].p.x += 0.5f * MOVE_STEP;
+				sceneUpdated = true;
+				break;
+			case '8':
+				spheres[currentSphere].p.z -= 0.5f * MOVE_STEP;
+				sceneUpdated = true;
+				break;
+			case '2':
+				spheres[currentSphere].p.z += 0.5f * MOVE_STEP;
+				sceneUpdated = true;
+				break;
+			case '9':
+				spheres[currentSphere].p.y += 0.5f * MOVE_STEP;
+				sceneUpdated = true;
+				break;
+			case '3':
+				spheres[currentSphere].p.y -= 0.5f * MOVE_STEP;
+				sceneUpdated = true;
+				break;
 			default:
 				needRedisplay = false;
 				break;
+		}
+
+		if (cameraUpdated) {
+			UpdateCamera();
+			UpdateCameraBuffer();
+			// Restart the rendering
+			currentSample = 0;
+		}
+
+		if (sceneUpdated) {
+			UpdateSpheresBuffer();
+			// Restart the rendering
+			currentSample = 0;
 		}
 
 		if (needRedisplay) {
@@ -189,12 +291,67 @@ protected:
 	}
 
 	void SpecialCallBack(int key, int x, int y) {
+		bool cameraUpdated = false;
 		bool needRedisplay = true;
 
-		switch (key) {
-			default:
-				needRedisplay = false;
+        switch (key) {
+			case GLUT_KEY_UP: {
+				Vec t = camera.target;
+				vsub(t, t, camera.orig);
+				t.y = t.y * cos(-ROTATE_STEP) + t.z * sin(-ROTATE_STEP);
+				t.z = -t.y * sin(-ROTATE_STEP) + t.z * cos(-ROTATE_STEP);
+				vadd(t, t, camera.orig);
+				camera.target = t;
+				cameraUpdated = true;
 				break;
+			}
+			case GLUT_KEY_DOWN: {
+				Vec t = camera.target;
+				vsub(t, t, camera.orig);
+				t.y = t.y * cos(ROTATE_STEP) + t.z * sin(ROTATE_STEP);
+				t.z = -t.y * sin(ROTATE_STEP) + t.z * cos(ROTATE_STEP);
+				vadd(t, t, camera.orig);
+				camera.target = t;
+				cameraUpdated = true;
+				break;
+			}
+			case GLUT_KEY_LEFT: {
+				Vec t = camera.target;
+				vsub(t, t, camera.orig);
+				t.x = t.x * cos(-ROTATE_STEP) - t.z * sin(-ROTATE_STEP);
+				t.z = t.x * sin(-ROTATE_STEP) + t.z * cos(-ROTATE_STEP);
+				vadd(t, t, camera.orig);
+				camera.target = t;
+				cameraUpdated = true;
+				break;
+			}
+			case GLUT_KEY_RIGHT: {
+				Vec t = camera.target;
+				vsub(t, t, camera.orig);
+				t.x = t.x * cos(ROTATE_STEP) - t.z * sin(ROTATE_STEP);
+				t.z = t.x * sin(ROTATE_STEP) + t.z * cos(ROTATE_STEP);
+				vadd(t, t, camera.orig);
+				camera.target = t;
+				cameraUpdated = true;
+				break;
+			}
+			case GLUT_KEY_PAGE_UP:
+				camera.target.y += MOVE_STEP;
+				cameraUpdated = true;
+				break;
+			case GLUT_KEY_PAGE_DOWN:
+				camera.target.y -= MOVE_STEP;
+				cameraUpdated = true;
+				break;
+			default:
+				break;
+		}
+
+		if (cameraUpdated) {
+			UpdateCamera();
+			UpdateCameraBuffer();
+			// Restart the rendering
+			currentSample = 0;
 		}
 
 		if (needRedisplay) {
@@ -449,6 +606,15 @@ private:
 				&camera);
 	}
 
+	void UpdateSpheresBuffer() {
+		cl::CommandQueue &oclQueue = deviceQueues[0];
+		oclQueue.enqueueWriteBuffer(*spheresBuff,
+				CL_FALSE,
+				0,
+				spheresBuff->getInfo<CL_MEM_SIZE>(),
+				&spheres[0]);		
+	}
+
 	void UpdateRender() {
 		const double startTime = WallClockTime();
 
@@ -482,8 +648,8 @@ private:
 		// A simple trick to smooth sample/sec value
 		const double k = 0.1;
 		sampleSec = sampleSec * (1.0 - k) + k * (kernelIterations * windowWidth * windowHeight / elapsedTime);
-		captionString = boost::str(boost::format("Rendering time (%d iterations): %.3f secs (%.1fM Sample/sec)") %
-				kernelIterations % elapsedTime % (sampleSec / 1000000.0));
+		captionString = boost::str(boost::format("[Pass %d][Rendering time (%d iterations per frame): %.3f secs (%.1fM Sample/sec)]") %
+				(currentSample + 1) % kernelIterations % elapsedTime % (sampleSec / 1000000.0));
 
 		if (elapsedTime < 0.075) {
 			// Too fast, increase the number of kernel iterations
@@ -504,10 +670,23 @@ private:
 		glRasterPos2i(300, 420);
 		PrintString(GLUT_BITMAP_HELVETICA_18, "Help");
 
+        // Help
 		glRasterPos2i(60, 390);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "h - toggle Help");
+		PrintString(GLUT_BITMAP_9_BY_15, "h - toggle Help");
+		glRasterPos2i(60, 375);
+		PrintString(GLUT_BITMAP_9_BY_15, "arrow Keys - rotate camera left/right/up/down");
 		glRasterPos2i(60, 360);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "p - save image.ppm");
+		PrintString(GLUT_BITMAP_9_BY_15, "a and d - move camera left and right");
+		glRasterPos2i(60, 345);
+		PrintString(GLUT_BITMAP_9_BY_15, "w and s - move camera forward and backward");
+		glRasterPos2i(60, 330);
+		PrintString(GLUT_BITMAP_9_BY_15, "r and f - move camera up and down");
+		glRasterPos2i(60, 315);
+		PrintString(GLUT_BITMAP_9_BY_15, "PageUp and PageDown - move camera target up and down");
+		glRasterPos2i(60, 300);
+		PrintString(GLUT_BITMAP_9_BY_15, "+ and - - to select next/previous object");
+		glRasterPos2i(60, 285);
+		PrintString(GLUT_BITMAP_9_BY_15, "2, 3, 4, 5, 6, 8, 9 - to move selected object");
 
 		glDisable(GL_BLEND);
 	}
@@ -529,7 +708,7 @@ private:
 	std::vector<Sphere> spheres;
 
 	double sampleSec;
-	unsigned int currentSample;
+	unsigned int currentSample, currentSphere;
 	std::string captionString;
 };
 
