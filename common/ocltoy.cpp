@@ -187,6 +187,7 @@ void OCLToy::SelectOpenCLDevices() {
 	boost::regex selRegex("[01]+");
 	for (size_t i = 0; i < platforms.size(); ++i) {
 		OCLTOY_LOG("OpenCL Platform " << i << ": " << platforms[i].getInfo<CL_PLATFORM_VENDOR>());
+		OCLTOY_LOG("OpenCL Platform " << i << ": " << platforms[i].getInfo<CL_PLATFORM_VERSION>());
 
 		// Get the list of devices available on the platform
 		VECTOR_CLASS<cl::Device> devices;
@@ -194,6 +195,7 @@ void OCLToy::SelectOpenCLDevices() {
 
 		for (size_t j = 0; j < devices.size(); ++j) {
 			OCLTOY_LOG("  OpenCL device " << j << ": " << devices[j].getInfo<CL_DEVICE_NAME>());
+			OCLTOY_LOG("    Version: " << devices[j].getInfo<CL_DEVICE_VERSION>());
 			OCLTOY_LOG("    Type: " << OCLDeviceTypeString(devices[j].getInfo<CL_DEVICE_TYPE>()));
 			OCLTOY_LOG("    Units: " << devices[j].getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
 			OCLTOY_LOG("    Global memory: " << devices[j].getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>() / 1024 << "Kbytes");

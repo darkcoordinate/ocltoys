@@ -44,6 +44,9 @@ extern std::string OCLErrorString(cl_int error);
 extern std::string OCLLocalMemoryTypeString(cl_device_local_mem_type type);
 extern std::string OCLDeviceTypeString(cl_device_type type);
 
+extern void PrintString(void *font, const std::string &str);
+extern std::string ReadSources(const std::string &fileName);
+
 inline double WallClockTime() {
 #if defined(__linux__) || defined(__APPLE__) || defined(__CYGWIN__) || defined(__OpenBSD__) || defined(__FreeBSD__)
 	struct timeval t;
@@ -57,8 +60,25 @@ inline double WallClockTime() {
 #endif
 }
 
-extern void PrintString(void *font, const std::string &str);
-extern std::string ReadSources(const std::string &fileName);
+template <class T> inline T RoundUp(const T a, const T b) {
+        const unsigned int r = a % b;
+        if (r == 0)
+                return a;
+        else
+                return a + b - r;
+}
+
+template <class T> inline T RoundUpPow2(T v) {
+        v--;
+
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+
+        return v+1;
+}
 
 #endif	/* UTILS_H */
 

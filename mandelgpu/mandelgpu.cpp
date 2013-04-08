@@ -326,11 +326,10 @@ private:
 		kernelMandel.setArg(6, maxIterations);
 
 		// Enqueue a kernel run
-		size_t globalThreads = windowWidth * windowHeight / 4 + 1;
-		if (globalThreads % workGroupSize != 0)
-			globalThreads = (globalThreads / workGroupSize + 1) * workGroupSize;
-
 		cl::CommandQueue &oclQueue = deviceQueues[0];
+		// Each work item renders 4 pixels
+		const size_t workItemCount = RoundUp(windowWidth * windowHeight, 4) / 4;
+		const size_t globalThreads = RoundUp(workItemCount, workGroupSize);
 		oclQueue.enqueueNDRangeKernel(kernelMandel, cl::NullRange,
 				cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
 
