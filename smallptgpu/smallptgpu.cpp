@@ -37,8 +37,8 @@
 class SmallPTGPU : public OCLToy {
 public:
 	SmallPTGPU() : OCLToy("SmallPTGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
-			pixelsBuff(NULL), seedsBuff(NULL), cameraBuff(NULL), spheresBuff(NULL),
-			workGroupSize(64), pixels(NULL), currentSample(0) {
+			samplesBuff(NULL), pixelsBuff(NULL), seedsBuff(NULL), cameraBuff(NULL),
+			spheresBuff(NULL), kernelWorkGroupSize(64), pixels(NULL), currentSample(0) {
 		useIdleCallback = true;
 		kernelIterations = 1;
 		sampleSec = 0.0;
@@ -125,6 +125,7 @@ protected:
 		UpdateCamera();
 		UpdateCameraBuffer();
 		ResizeFrameBuffer();
+		UpdateKernelsArgs();
 
 		glutPostRedisplay();
 		lastUserInputTime = WallClockTime();
@@ -253,10 +254,12 @@ private:
 		}
 
 		kernelSmallPT = cl::Kernel(program, "SmallPTGPU");
-		kernelSmallPT.getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &workGroupSize);
+		kernelSmallPT.getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &kernelWorkGroupSize);
 		if (commandLineOpts.count("workgroupsize"))
-			workGroupSize = commandLineOpts["workgroupsize"].as<size_t>();
-		OCLTOY_LOG("Using workgroup size: " << workGroupSize);
+			kernelWorkGroupSize = commandLineOpts["workgroupsize"].as<size_t>();
+		OCLTOY_LOG("Using workgroup size: " << kernelWorkGroupSize);
+
+		kernelToneMapping = cl::Kernel(program, "ToneMapping");
 		
 		//----------------------------------------------------------------------
 		// Allocate buffer
@@ -268,31 +271,24 @@ private:
 		// Set kernel arguments
 		//----------------------------------------------------------------------
 
-		kernelSmallPT.setArg(0, *pixelsBuff);
-		kernelSmallPT.setArg(1, *seedsBuff);
-		kernelSmallPT.setArg(2, *cameraBuff);
-		kernelSmallPT.setArg(3, (unsigned int)spheres.size());
-		kernelSmallPT.setArg(4, *spheresBuff);
-		kernelSmallPT.setArg(5, windowWidth);
-		kernelSmallPT.setArg(6, windowHeight);
-		kernelSmallPT.setArg(7, 0);
+		UpdateKernelsArgs();
 	}
 
 	void FreeBuffers() {
+		FreeOCLBuffer(0, &samplesBuff);
+		FreeOCLBuffer(0, &pixelsBuff);
+		delete[] pixels;
 		FreeOCLBuffer(0, &seedsBuff);
 		FreeOCLBuffer(0, &cameraBuff);
 		FreeOCLBuffer(0, &spheresBuff);
-		FreeOCLBuffer(0, &seedsBuff);
-		FreeOCLBuffer(0, &pixelsBuff);
-		delete[] pixels;
 	}
 
 	void AllocateBuffers() {
-		// Allocate the frame buffer
-		ResizeFrameBuffer();
-
 		AllocOCLBufferRO(0, &cameraBuff, &camera, sizeof(Camera), "CameraBuffer");
 		AllocOCLBufferRO(0, &spheresBuff, &spheres[0], sizeof(Sphere) * spheres.size(), "SpheresBuffer");
+
+		// Allocate the frame buffer
+		ResizeFrameBuffer();
 	}
 
 	void ReadScene(const std::string &fileName) {
@@ -398,11 +394,14 @@ private:
 		cl::CommandQueue &oclQueue = deviceQueues[0];
 		const size_t pixelCount = windowWidth * windowHeight;
 
+		// Allocate the sample buffer
+		AllocOCLBufferRW(0, &samplesBuff, pixelCount * sizeof(float) * 3, "SamplesBuffer");
+
 		// Allocate the frame buffer
 		delete[] pixels;
 		pixels = new float[pixelCount * 3];
 		std::fill(&pixels[0], &pixels[pixelCount * 3], 0.f);
-		AllocOCLBufferRW(0, &pixelsBuff, pixelCount * sizeof(float) * 3, "PixelsBuffer");
+		AllocOCLBufferWO(0, &pixelsBuff, pixelCount * sizeof(float) * 3, "PixelsBuffer");
 
 		// Allocate the seeds for random number generator
 		AllocOCLBufferRW(0, &seedsBuff, pixelCount * sizeof(unsigned int) * 2, "SeedsBuffer");
@@ -420,14 +419,25 @@ private:
 				seeds);
 		delete[] seeds;
 
-		kernelSmallPT.setArg(0, *pixelsBuff);
-		kernelSmallPT.setArg(1, *seedsBuff);
-		kernelSmallPT.setArg(5, windowWidth);
-		kernelSmallPT.setArg(6, windowHeight);
-
 		// Better to restart load balancing
 		kernelIterations = 1;
 		currentSample = 0;
+	}
+
+	void UpdateKernelsArgs() {
+		kernelSmallPT.setArg(0, *samplesBuff);
+		kernelSmallPT.setArg(1, *seedsBuff);
+		kernelSmallPT.setArg(2, *cameraBuff);
+		kernelSmallPT.setArg(3, (unsigned int)spheres.size());
+		kernelSmallPT.setArg(4, *spheresBuff);
+		kernelSmallPT.setArg(5, windowWidth);
+		kernelSmallPT.setArg(6, windowHeight);
+		kernelSmallPT.setArg(7, currentSample);
+
+		kernelToneMapping.setArg(0, *samplesBuff);
+		kernelToneMapping.setArg(1, *pixelsBuff);
+		kernelToneMapping.setArg(2, windowWidth);
+		kernelToneMapping.setArg(3, windowHeight);
 	}
 
 	void UpdateCameraBuffer() {
@@ -443,8 +453,8 @@ private:
 		const double startTime = WallClockTime();
 
 		size_t globalThreads = windowWidth * windowHeight;
-		if (globalThreads % workGroupSize != 0)
-			globalThreads = (globalThreads / workGroupSize + 1) * workGroupSize;
+		if (globalThreads % kernelWorkGroupSize != 0)
+			globalThreads = (globalThreads / kernelWorkGroupSize + 1) * kernelWorkGroupSize;
 
 		cl::CommandQueue &oclQueue = deviceQueues[0];
 		for (unsigned int i = 0; i < kernelIterations; ++i) {
@@ -453,8 +463,12 @@ private:
 
 			// Enqueue a kernel run
 			oclQueue.enqueueNDRangeKernel(kernelSmallPT, cl::NullRange,
-					cl::NDRange(globalThreads), cl::NDRange(workGroupSize));
+					cl::NDRange(globalThreads), cl::NDRange(kernelWorkGroupSize));
 		}
+
+		// Image tone mapping
+		oclQueue.enqueueNDRangeKernel(kernelToneMapping, cl::NullRange,
+					cl::NDRange(globalThreads), cl::NDRange(kernelWorkGroupSize));
 
 		// Read back the result
 		oclQueue.enqueueReadBuffer(
@@ -500,13 +514,14 @@ private:
 
 	double lastUserInputTime;
 
+	cl::Buffer *samplesBuff;
 	cl::Buffer *pixelsBuff;
 	cl::Buffer *seedsBuff;
 	cl::Buffer *cameraBuff;
 	cl::Buffer *spheresBuff;
 
-	cl::Kernel kernelSmallPT;
-	size_t workGroupSize;
+	cl::Kernel kernelSmallPT, kernelToneMapping;
+	size_t kernelWorkGroupSize;
 	unsigned int kernelIterations;
 
 	float *pixels;

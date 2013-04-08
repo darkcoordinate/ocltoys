@@ -19,62 +19,8 @@
  *   OCLToys website: http://code.google.com/p/ocltoys                     *
  ***************************************************************************/
 
-//------------------------------------------------------------------------------
-// vec.h
-
-typedef struct {
-	float x, y, z; // position, also color (r,g,b)
-} Vec;
-
-#define vinit(v, a, b, c) { (v).x = a; (v).y = b; (v).z = c; }
-#define vassign(a, b) vinit(a, (b).x, (b).y, (b).z)
-#define vclr(v) vinit(v, 0.f, 0.f, 0.f)
-#define vadd(v, a, b) vinit(v, (a).x + (b).x, (a).y + (b).y, (a).z + (b).z)
-#define vsub(v, a, b) vinit(v, (a).x - (b).x, (a).y - (b).y, (a).z - (b).z)
-#define vsadd(v, a, b) { float k = (a); vinit(v, (b).x + k, (b).y + k, (b).z + k) }
-#define vssub(v, a, b) { float k = (a); vinit(v, (b).x - k, (b).y - k, (b).z - k) }
-#define vmul(v, a, b) vinit(v, (a).x * (b).x, (a).y * (b).y, (a).z * (b).z)
-#define vsmul(v, a, b) { float k = (a); vinit(v, k * (b).x, k * (b).y, k * (b).z) }
-#define vdot(a, b) ((a).x * (b).x + (a).y * (b).y + (a).z * (b).z)
-#define vnorm(v) { float l = 1.f / sqrt(vdot(v, v)); vsmul(v, l, v); }
-#define vxcross(v, a, b) vinit(v, (a).y * (b).z - (a).z * (b).y, (a).z * (b).x - (a).x * (b).z, (a).x * (b).y - (a).y * (b).x)
-#define vfilter(v) ((v).x > (v).y && (v).x > (v).z ? (v).x : (v).y > (v).z ? (v).y : (v).z)
-#define viszero(v) (((v).x == 0.f) && ((v).x == 0.f) && ((v).z == 0.f))
-
-//------------------------------------------------------------------------------
-// camera.h
-typedef struct {
-	/* User defined values */
-	Vec orig, target;
-	/* Calculated values */
-	Vec dir, x, y;
-} Camera;
-
-//------------------------------------------------------------------------------
-// geom.h
-
-#define EPSILON 0.01f
-#define FLOAT_PI 3.14159265358979323846f
-
-typedef struct {
-	Vec o, d;
-} Ray;
-
-#define rinit(r, a, b) { vassign((r).o, a); vassign((r).d, b); }
-#define rassign(a, b) { vassign((a).o, (b).o); vassign((a).d, (b).d); }
-
-enum Refl {
-	DIFF, SPEC, REFR
-}; /* material types, used in radiance() */
-
-typedef struct {
-	float rad; /* radius */
-	Vec p, e, c; /* position, emission, color */
-	enum Refl refl; /* reflection type (DIFFuse, SPECular, REFRactive) */
-} Sphere;
-
-//------------------------------------------------------------------------------
-// simplernd.h
+#include "camera.h"
+#include "geom.h"
 
 float GetRandom(unsigned int *seed0, unsigned int *seed1) {
 	*seed0 = 36969 * ((*seed0) & 65535) + ((*seed0) >> 16);
@@ -91,8 +37,6 @@ float GetRandom(unsigned int *seed0, unsigned int *seed1) {
 
 	return (res.f - 2.f) / 2.f;
 }
-
-//------------------------------------------------------------------------------
 
 float SphereIntersect(
 	__global const Sphere *s,
@@ -120,16 +64,6 @@ float SphereIntersect(
 	}
 }
 
-void UniformSampleSphere(const float u1, const float u2, Vec *v) {
-	const float zz = 1.f - 2.f * u1;
-	const float r = sqrt(max(0.f, 1.f - zz * zz));
-	const float phi = 2.f * FLOAT_PI * u2;
-	const float xx = r * cos(phi);
-	const float yy = r * sin(phi);
-
-	vinit(*v, xx, yy, zz);
-}
-
 int Intersect(
 	__global const Sphere *spheres,
 	const unsigned int sphereCount,
@@ -148,21 +82,6 @@ int Intersect(
 	}
 
 	return (*t < inf);
-}
-
-int IntersectP(
-	__global const Sphere *spheres,
-	const unsigned int sphereCount,
-	const Ray *r,
-	const float maxt) {
-	unsigned int i = sphereCount;
-	for (; i--;) {
-		const float d = SphereIntersect(&spheres[i], r);
-		if ((d != 0.f) && (d < maxt))
-			return 1;
-	}
-
-	return 0;
 }
 
 void Radiance(
@@ -341,7 +260,7 @@ void GenerateCameraRay(__global const Camera *camera,
 }
 
 __kernel void SmallPTGPU(
-    __global Vec *pixels, __global unsigned int *seedsInput,
+    __global Vec *samples, __global unsigned int *seedsInput,
 	__global const Camera *camera,
 	const unsigned int sphereCount, __global const Sphere *sphere,
 	const unsigned int width, const unsigned int height,
@@ -364,17 +283,34 @@ __kernel void SmallPTGPU(
 	Vec r;
 	Radiance(sphere, sphereCount, &ray, &seed0, &seed1, &r);
 
-	if (currentSample == 0) {
-		// Jens's patch for MacOS
-		vassign(pixels[gid], r);
-	} else {
+	__global Vec *sample = &samples[gid];
+	if (currentSample == 0)
+		*sample = r;
+	else {
 		const float k1 = currentSample;
 		const float k2 = 1.f / (currentSample + 1.f);
-		pixels[gid].x = (pixels[gid].x * k1  + r.x) * k2;
-		pixels[gid].y = (pixels[gid].y * k1  + r.y) * k2;
-		pixels[gid].z = (pixels[gid].z * k1  + r.z) * k2;
+		sample->x = (sample->x * k1  + r.x) * k2;
+		sample->y = (sample->y * k1  + r.y) * k2;
+		sample->z = (sample->z * k1  + r.z) * k2;
 	}
 
 	seedsInput[2 * gid] = seed0;
 	seedsInput[2 * gid + 1] = seed1;
+}
+
+#define toColor(x) (pow(clamp(x, 0.f, 1.f), 1.f / 2.2f))
+
+__kernel void ToneMapping(
+	__global Vec *samples, __global Vec *pixels,
+	const unsigned int width, const unsigned int height) {
+	const int gid = get_global_id(0);
+	// Check if we have to do something
+	if (gid >= width * height)
+		return;
+
+	__global Vec *sample = &samples[gid];
+	__global Vec *pixel = &pixels[gid];
+	pixel->x = toColor(sample->x);
+	pixel->y = toColor(sample->y);
+	pixel->z = toColor(sample->z);
 }

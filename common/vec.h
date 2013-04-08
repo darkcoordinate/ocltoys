@@ -36,7 +36,7 @@ typedef struct {
 #define vmul(v, a, b) vinit(v, (a).x * (b).x, (a).y * (b).y, (a).z * (b).z)
 #define vsmul(v, a, b) { float k = (a); vinit(v, k * (b).x, k * (b).y, k * (b).z) }
 #define vdot(a, b) ((a).x * (b).x + (a).y * (b).y + (a).z * (b).z)
-#define vnorm(v) { float l = 1.f / sqrtf(vdot(v, v)); vsmul(v, l, v); }
+#define vnorm(v) { float l = 1.f / sqrt(vdot(v, v)); vsmul(v, l, v); }
 #define vxcross(v, a, b) vinit(v, (a).y * (b).z - (a).z * (b).y, (a).z * (b).x - (a).x * (b).z, (a).x * (b).y - (a).y * (b).x)
 #define vfilter(v) ((v).x > (v).y && (v).x > (v).z ? (v).x : (v).y > (v).z ? (v).y : (v).z)
 #define viszero(v) (((v).x == 0.f) && ((v).x == 0.f) && ((v).z == 0.f))
