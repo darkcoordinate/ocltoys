@@ -44,6 +44,10 @@ public:
 	SmallPTGPU() : OCLToy("SmallPTGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
 			samplesBuff(NULL), pixelsBuff(NULL), seedsBuff(NULL), cameraBuff(NULL),
 			spheresBuff(NULL), kernelWorkGroupSize(64), pixels(NULL), currentSample(0), currentSphere(0) {
+		maxDepth = 6;
+		defaultVolumeSigmaS = 0.f;
+		defaultVolumeSigmaA = 0.f;
+
 		useIdleCallback = true;
 		kernelIterations = 1;
 		sampleSec = 0.0;
@@ -405,9 +409,20 @@ private:
 		cl::Program::Sources source(1, std::make_pair(kernelSource.c_str(), kernelSource.length()));
 		cl::Program program = cl::Program(oclContext, source);
 		try {
+			// Build options
+			std::stringstream ss;
+			ss.precision(6);
+			ss << std::scientific <<
+					"-DPARAM_MAX_DEPTH=" << maxDepth << "  "
+					"-DPARAM_DEFAULT_SIGMA_S=" << defaultVolumeSigmaS << "f "
+					"-DPARAM_DEFAULT_SIGMA_A=" << defaultVolumeSigmaA << "f "
+					"-I. -I../common";
+			const std::string opts = ss.str();
+			OCLTOY_LOG("Kernel parameters: " << opts);
+
 			VECTOR_CLASS<cl::Device> buildDevice;
 			buildDevice.push_back(oclDevice);
-			program.build(buildDevice,"-I. -I../common");
+			program.build(buildDevice, opts.c_str());
 		} catch (cl::Error err) {
 			cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
 			OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());
@@ -471,13 +486,52 @@ private:
 		if (cameraArgs.size() != 7)
 			throw std::runtime_error("Failed to parse 6 camera parameters");
 
-		camera.orig.x = static_cast<float>(boost::lexical_cast<double>(cameraArgs[1]));
-		camera.orig.y = static_cast<float>(boost::lexical_cast<double>(cameraArgs[2]));
-		camera.orig.z = static_cast<float>(boost::lexical_cast<double>(cameraArgs[3]));
-		camera.target.x = static_cast<float>(boost::lexical_cast<double>(cameraArgs[4]));
-		camera.target.y = static_cast<float>(boost::lexical_cast<double>(cameraArgs[5]));
-		camera.target.z = static_cast<float>(boost::lexical_cast<double>(cameraArgs[6]));
+		camera.orig.x = boost::lexical_cast<float>(cameraArgs[1]);
+		camera.orig.y = boost::lexical_cast<float>(cameraArgs[2]);
+		camera.orig.z = boost::lexical_cast<float>(cameraArgs[3]);
+		camera.target.x = boost::lexical_cast<float>(cameraArgs[4]);
+		camera.target.y = boost::lexical_cast<float>(cameraArgs[5]);
+		camera.target.z = boost::lexical_cast<float>(cameraArgs[6]);
 		UpdateCamera();
+
+		// Read the max. path depth
+		std::string maxDepthLine;
+		std::getline(f, maxDepthLine);
+		if (!f.good())
+			throw std::runtime_error("Failed to read path max. depth parameter");
+
+		std::vector<std::string> maxDepthArgs;
+		boost::split(maxDepthArgs, maxDepthLine, boost::is_any_of("\t "));
+		if (maxDepthArgs.size() != 2)
+			throw std::runtime_error("Failed to parse path max. depth parameter");
+
+		maxDepth = boost::lexical_cast<unsigned int>(maxDepthArgs[1]);
+
+		// Read the default sigma s value
+		std::string sigmaSLine;
+		std::getline(f, sigmaSLine);
+		if (!f.good())
+			throw std::runtime_error("Failed to read sigma s parameter");
+
+		std::vector<std::string> sigmaSArgs;
+		boost::split(sigmaSArgs, sigmaSLine, boost::is_any_of("\t "));
+		if (sigmaSArgs.size() != 2)
+			throw std::runtime_error("Failed to parse sigma s parameter");
+
+		defaultVolumeSigmaS = boost::lexical_cast<float>(sigmaSArgs[1]);
+
+		// Read the default sigma s value
+		std::string sigmaALine;
+		std::getline(f, sigmaALine);
+		if (!f.good())
+			throw std::runtime_error("Failed to read sigma s parameter");
+
+		std::vector<std::string> sigmaAArgs;
+		boost::split(sigmaAArgs, sigmaALine, boost::is_any_of("\t "));
+		if (sigmaAArgs.size() != 2)
+			throw std::runtime_error("Failed to parse sigma s parameter");
+
+		defaultVolumeSigmaA = boost::lexical_cast<float>(sigmaAArgs[1]);
 
 		// Read the sphere count
 		std::string sizeLine;
@@ -495,40 +549,76 @@ private:
 
 		// Read all spheres
 		for (unsigned int i = 0; i < sphereCount; i++) {
+			OCLTOY_LOG("  Parsing sphere " << i << "...");
+
 			// Read the sphere definition
 			std::string sphereLine;
 			std::getline(f, sphereLine);
 			if (!f.good())
-				throw std::runtime_error("Failed to read sphere #" + boost::lexical_cast<int>(i));
+				throw std::runtime_error("Failed to read sphere #" + boost::lexical_cast<std::string>(i));
 
 			std::vector<std::string> sphereArgs;
 			boost::split(sphereArgs, sphereLine, boost::is_any_of("\t "));
-			if (sphereArgs.size() != 12)
-				throw std::runtime_error("Failed to parse sphere #" + boost::lexical_cast<int>(i));
+			if ((sphereArgs.size() < 8))
+				throw std::runtime_error("Failed to parse initial parameters of sphere #" + boost::lexical_cast<std::string>(i));
 
 			Sphere *s = &spheres[i];
-			s->rad = static_cast<float>(boost::lexical_cast<double>(sphereArgs[1]));
-			s->p.x = static_cast<float>(boost::lexical_cast<double>(sphereArgs[2]));
-			s->p.y = static_cast<float>(boost::lexical_cast<double>(sphereArgs[3]));
-			s->p.z = static_cast<float>(boost::lexical_cast<double>(sphereArgs[4]));
-			s->e.x = static_cast<float>(boost::lexical_cast<double>(sphereArgs[5]));
-			s->e.y = static_cast<float>(boost::lexical_cast<double>(sphereArgs[6]));
-			s->e.z = static_cast<float>(boost::lexical_cast<double>(sphereArgs[7]));
-			s->c.x = static_cast<float>(boost::lexical_cast<double>(sphereArgs[8]));
-			s->c.y = static_cast<float>(boost::lexical_cast<double>(sphereArgs[9]));
-			s->c.z = static_cast<float>(boost::lexical_cast<double>(sphereArgs[10]));
+			s->rad = boost::lexical_cast<float>(sphereArgs[1]);
+			s->p.x = boost::lexical_cast<float>(sphereArgs[2]);
+			s->p.y = boost::lexical_cast<float>(sphereArgs[3]);
+			s->p.z = boost::lexical_cast<float>(sphereArgs[4]);
+			s->e.x = boost::lexical_cast<float>(sphereArgs[5]);
+			s->e.y = boost::lexical_cast<float>(sphereArgs[6]);
+			s->e.z = boost::lexical_cast<float>(sphereArgs[7]);
 
-			const unsigned int material = boost::lexical_cast<int>(sphereArgs[11]);
+			const unsigned int material = boost::lexical_cast<int>(sphereArgs[8]);
 			switch (material) {
-				case 0:
-					s->refl = DIFF;
+				case 0: {
+					if ((sphereArgs.size() != 12))
+						throw std::runtime_error("Failed to parse diffuse sphere #" + boost::lexical_cast<std::string>(i));
+
+					s->matType = MATTE;
+					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
 					break;
-				case 1:
-					s->refl = SPEC;
+				}
+				case 1: {
+					if ((sphereArgs.size() != 12))
+						throw std::runtime_error("Failed to parse mirror sphere #" + boost::lexical_cast<std::string>(i));
+					
+					s->matType = MIRROR;
+					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
 					break;
-				case 2:
-					s->refl = REFR;
+				}
+				case 2: {
+					if ((sphereArgs.size() != 15))
+						throw std::runtime_error("Failed to parse glass sphere #" + boost::lexical_cast<std::string>(i));
+
+					s->matType = GLASS;
+					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->glass.ior = boost::lexical_cast<float>(sphereArgs[12]);
+					s->glass.sigmaS = boost::lexical_cast<float>(sphereArgs[13]);
+					s->glass.sigmaA = boost::lexical_cast<float>(sphereArgs[14]);
 					break;
+				}
+//			case 3: {
+//					if ((sphereArgs.size() != 15))
+//						throw std::runtime_error("Failed to parse glass sphere #" + boost::lexical_cast<std::string>(i));
+//
+//					s->matType = SSS;
+//					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
+//					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
+//					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
+//					s->sss.transparency = boost::lexical_cast<float>(sphereArgs[12]);
+//					s->sss.sigmaS = boost::lexical_cast<float>(sphereArgs[13]);
+//					s->sss.sigmaA = boost::lexical_cast<float>(sphereArgs[14]);
+//					break;
+//				}
 				default:
 					throw std::runtime_error("Unknown material for sphere #" + boost::lexical_cast<int>(i));
 			}
@@ -711,6 +801,8 @@ private:
 	float *pixels;
 	Camera camera;
 	std::vector<Sphere> spheres;
+	unsigned int maxDepth;
+	float defaultVolumeSigmaS, defaultVolumeSigmaA;
 
 	double sampleSec;
 	unsigned int currentSample, currentSphere;

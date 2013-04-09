@@ -34,14 +34,24 @@ typedef struct {
 #define rinit(r, a, b) { vassign((r).o, a); vassign((r).d, b); }
 #define rassign(a, b) { vassign((a).o, (b).o); vassign((a).d, (b).d); }
 
-enum Refl {
-	DIFF, SPEC, REFR
-}; /* material types, used in radiance() */
+typedef enum {
+	MATTE, MIRROR, GLASS //, SSS
+} MaterialType; /* material types, used in radiance() */
 
 typedef struct {
 	float rad; /* radius */
 	Vec p, e, c; /* position, emission, color */
-	enum Refl refl; /* reflection type (DIFFuse, SPECular, REFRactive) */
+	MaterialType matType;
+	union {
+		struct {
+			float ior; // Index of refraction
+			float sigmaS, sigmaA; // Volume rendering
+		} glass;
+		struct {
+			float transparency;
+			float sigmaS, sigmaA; // Volume rendering
+		} sss;
+	};
 } Sphere;
 
 #endif	/* _GEOM_H */

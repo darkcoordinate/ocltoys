@@ -33,16 +33,27 @@ typedef struct {
 
 
 
-enum Refl {
- DIFF, SPEC, REFR
-};
+typedef enum {
+ MATTE, MIRROR, GLASS
+} MaterialType;
 
 typedef struct {
  float rad;
  Vec p, e, c;
- enum Refl refl;
+ MaterialType matType;
+ union {
+  struct {
+   float ior;
+   float sigmaS, sigmaA;
+  } glass;
+  struct {
+   float transparency;
+   float sigmaS, sigmaA;
+  } sss;
+ };
 } Sphere;
 # 24 "<stdin>" 2
+
 
 
 
@@ -141,8 +152,8 @@ void SampleHG(const float g, const float e1, const float e2, Vec *dir) {
 }
 
 float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
-  float *scatterDistance, unsigned int *seed0, unsigned int *seed1) {
- *scatterDistance = SampleSegment(GetRandom(seed0, seed1), .004f, distance - 0.01f) + 0.01f;
+  float *scatterDistance, unsigned int *seed0, unsigned int *seed1, const float sigmaS) {
+ *scatterDistance = SampleSegment(GetRandom(seed0, seed1), sigmaS, distance - 0.01f) + 0.01f;
 
  Vec scatterPoint;
  { float k = (*scatterDistance); { (scatterPoint).x = k * (currentRay->d).x; (scatterPoint).y = k * (currentRay->d).y; (scatterPoint).z = k * (currentRay->d).z; } };
@@ -162,7 +173,7 @@ float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
 
  { { ((*scatterRay).o).x = (scatterPoint).x; ((*scatterRay).o).y = (scatterPoint).y; ((*scatterRay).o).z = (scatterPoint).z; }; { ((*scatterRay).d).x = (scatterDir).x; ((*scatterRay).d).y = (scatterDir).y; ((*scatterRay).d).z = (scatterDir).z; }; };
 
- return (1.f - exp(-.004f * (distance - 0.01f)));
+ return (1.f - exp(-sigmaS * (distance - 0.01f)));
 }
 
 void Radiance(
@@ -171,14 +182,19 @@ void Radiance(
  const Ray *startRay,
  unsigned int *seed0, unsigned int *seed1,
  Vec *result) {
+ float currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+ float currentSigmaA = PARAM_DEFAULT_SIGMA_A;
+ float currentSigmaT = currentSigmaS + currentSigmaA;
+
  Ray currentRay; { { ((currentRay).o).x = ((*startRay).o).x; ((currentRay).o).y = ((*startRay).o).y; ((currentRay).o).z = ((*startRay).o).z; }; { ((currentRay).d).x = ((*startRay).d).x; ((currentRay).d).y = ((*startRay).d).y; ((currentRay).d).z = ((*startRay).d).z; }; };
  Vec rad; { (rad).x = 0.f; (rad).y = 0.f; (rad).z = 0.f; };
+
  Vec throughput; { (throughput).x = 1.f; (throughput).y = 1.f; (throughput).z = 1.f; };
 
  unsigned int depth = 0;
  for (;; ++depth) {
 
-  if (depth > 6) {
+  if (depth > PARAM_MAX_DEPTH) {
    *result = rad;
    return;
   }
@@ -187,21 +203,23 @@ void Radiance(
   unsigned int id = 0;
   const bool hit = Intersect(spheres, sphereCount, &currentRay, &t, &id);
 
+  if (currentSigmaS > 0.f) {
 
-  Ray scatterRay;
-  float scatterDistance;
-  const float scatteringProbability = Scatter(&currentRay, hit ? t : 999.f, &scatterRay,
-    &scatterDistance, seed0, seed1);
-
-
-  if ((scatteringProbability > 0.f) && (GetRandom(seed0, seed1) <= scatteringProbability)) {
-
-   { { ((currentRay).o).x = ((scatterRay).o).x; ((currentRay).o).y = ((scatterRay).o).y; ((currentRay).o).z = ((scatterRay).o).z; }; { ((currentRay).d).x = ((scatterRay).d).x; ((currentRay).d).y = ((scatterRay).d).y; ((currentRay).d).z = ((scatterRay).d).z; }; };
+   Ray scatterRay;
+   float scatterDistance;
+   const float scatteringProbability = Scatter(&currentRay, hit ? t : 999.f, &scatterRay,
+     &scatterDistance, seed0, seed1, currentSigmaS);
 
 
-   const float absorption = exp(-(.004f + .0001f) * scatterDistance);
-   { float k = (absorption); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
-   continue;
+   if ((scatteringProbability > 0.f) && (GetRandom(seed0, seed1) < scatteringProbability)) {
+
+    { { ((currentRay).o).x = ((scatterRay).o).x; ((currentRay).o).y = ((scatterRay).o).y; ((currentRay).o).z = ((scatterRay).o).z; }; { ((currentRay).d).x = ((scatterRay).d).x; ((currentRay).d).y = ((scatterRay).d).y; ((currentRay).d).z = ((scatterRay).d).z; }; };
+
+
+    const float absorption = exp(-currentSigmaT * scatterDistance);
+    { float k = (absorption); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
+    continue;
+   }
   }
 
   if (!hit) {
@@ -209,7 +227,8 @@ void Radiance(
    return;
   }
 
-  const float absorption = exp(-(.004f + .0001f) * t);
+
+  const float absorption = exp(-currentSigmaT * t);
   { float k = (absorption); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
 
   __global const Sphere *obj = &spheres[id];
@@ -231,7 +250,6 @@ void Radiance(
 
   Vec eCol; { (eCol).x = (obj->e).x; (eCol).y = (obj->e).y; (eCol).z = (obj->e).z; };
   if (!(((eCol).x == 0.f) && ((eCol).x == 0.f) && ((eCol).z == 0.f))) {
-   { float k = (fabs(dp)); { (eCol).x = k * (eCol).x; (eCol).y = k * (eCol).y; (eCol).z = k * (eCol).z; } };
    { (eCol).x = (throughput).x * (eCol).x; (eCol).y = (throughput).y * (eCol).y; (eCol).z = (throughput).z * (eCol).z; };
    { (rad).x = (rad).x + (eCol).x; (rad).y = (rad).y + (eCol).y; (rad).z = (rad).z + (eCol).z; };
 
@@ -239,90 +257,104 @@ void Radiance(
    return;
   }
 
-  if (obj->refl == DIFF) {
-   { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
-
-
-
-   float r1 = 2.f * 3.14159265358979323846f * GetRandom(seed0, seed1);
-   float r2 = GetRandom(seed0, seed1);
-   float r2s = sqrt(r2);
-
-   Vec w = nl;
-   Vec u, v;
-   CoordinateSystem(&w, &u, &v);
-
-   Vec newDir;
-   { float k = (cos(r1) * r2s); { (u).x = k * (u).x; (u).y = k * (u).y; (u).z = k * (u).z; } };
-   { float k = (sin(r1) * r2s); { (v).x = k * (v).x; (v).y = k * (v).y; (v).z = k * (v).z; } };
-   { (newDir).x = (u).x + (v).x; (newDir).y = (u).y + (v).y; (newDir).z = (u).z + (v).z; };
-   { float k = (sqrt(1 - r2)); { (w).x = k * (w).x; (w).y = k * (w).y; (w).z = k * (w).z; } };
-   { (newDir).x = (newDir).x + (w).x; (newDir).y = (newDir).y + (w).y; (newDir).z = (newDir).z + (w).z; };
-
-   { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
-   continue;
-  } else if (obj->refl == SPEC) {
-   Vec newDir;
-   { float k = (2.f * ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z)); { (newDir).x = k * (normal).x; (newDir).y = k * (normal).y; (newDir).z = k * (normal).z; } };
-   { (newDir).x = (currentRay.d).x - (newDir).x; (newDir).y = (currentRay.d).y - (newDir).y; (newDir).z = (currentRay.d).z - (newDir).z; };
-
-   { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
-
-   { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
-   continue;
-  } else {
-   Vec newDir;
-   { float k = (2.f * ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z)); { (newDir).x = k * (normal).x; (newDir).y = k * (normal).y; (newDir).z = k * (normal).z; } };
-   { (newDir).x = (currentRay.d).x - (newDir).x; (newDir).y = (currentRay.d).y - (newDir).y; (newDir).z = (currentRay.d).z - (newDir).z; };
-
-   Ray reflRay; { { ((reflRay).o).x = (hitPoint).x; ((reflRay).o).y = (hitPoint).y; ((reflRay).o).z = (hitPoint).z; }; { ((reflRay).d).x = (newDir).x; ((reflRay).d).y = (newDir).y; ((reflRay).d).z = (newDir).z; }; };
-   int into = (((normal).x * (nl).x + (normal).y * (nl).y + (normal).z * (nl).z) > 0);
-
-   float nc = 1.f;
-   float nt = 1.5f;
-   float nnt = into ? nc / nt : nt / nc;
-   float ddn = ((currentRay.d).x * (nl).x + (currentRay.d).y * (nl).y + (currentRay.d).z * (nl).z);
-   float cos2t = 1.f - nnt * nnt * (1.f - ddn * ddn);
-
-   if (cos2t < 0.f) {
+  switch (obj->matType) {
+   case MATTE: {
     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
 
-    { { ((currentRay).o).x = ((reflRay).o).x; ((currentRay).o).y = ((reflRay).o).y; ((currentRay).o).z = ((reflRay).o).z; }; { ((currentRay).d).x = ((reflRay).d).x; ((currentRay).d).y = ((reflRay).d).y; ((currentRay).d).z = ((reflRay).d).z; }; };
-    continue;
+    float r1 = 2.f * 3.14159265358979323846f * GetRandom(seed0, seed1);
+    float r2 = GetRandom(seed0, seed1);
+    float r2s = sqrt(r2);
+
+    Vec w = nl;
+    Vec u, v;
+    CoordinateSystem(&w, &u, &v);
+
+    Vec newDir;
+    { float k = (cos(r1) * r2s); { (u).x = k * (u).x; (u).y = k * (u).y; (u).z = k * (u).z; } };
+    { float k = (sin(r1) * r2s); { (v).x = k * (v).x; (v).y = k * (v).y; (v).z = k * (v).z; } };
+    { (newDir).x = (u).x + (v).x; (newDir).y = (u).y + (v).y; (newDir).z = (u).z + (v).z; };
+    { float k = (sqrt(1 - r2)); { (w).x = k * (w).x; (w).y = k * (w).y; (w).z = k * (w).z; } };
+    { (newDir).x = (newDir).x + (w).x; (newDir).y = (newDir).y + (w).y; (newDir).z = (newDir).z + (w).z; };
+
+    { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
+    break;
    }
+   case MIRROR: {
+    Vec newDir;
+    { float k = (2.f * ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z)); { (newDir).x = k * (normal).x; (newDir).y = k * (normal).y; (newDir).z = k * (normal).z; } };
+    { (newDir).x = (currentRay.d).x - (newDir).x; (newDir).y = (currentRay.d).y - (newDir).y; (newDir).z = (currentRay.d).z - (newDir).z; };
 
-   float kk = (into ? 1 : -1) * (ddn * nnt + sqrt(cos2t));
-   Vec nkk;
-   { float k = (kk); { (nkk).x = k * (normal).x; (nkk).y = k * (normal).y; (nkk).z = k * (normal).z; } };
-   Vec transDir;
-   { float k = (nnt); { (transDir).x = k * (currentRay.d).x; (transDir).y = k * (currentRay.d).y; (transDir).z = k * (currentRay.d).z; } };
-   { (transDir).x = (transDir).x - (nkk).x; (transDir).y = (transDir).y - (nkk).y; (transDir).z = (transDir).z - (nkk).z; };
-   { float l = 1.f / sqrt(((transDir).x * (transDir).x + (transDir).y * (transDir).y + (transDir).z * (transDir).z)); { float k = (l); { (transDir).x = k * (transDir).x; (transDir).y = k * (transDir).y; (transDir).z = k * (transDir).z; } }; };
-
-   float a = nt - nc;
-   float b = nt + nc;
-   float R0 = a * a / (b * b);
-   float c = 1 - (into ? -ddn : ((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
-
-   float Re = R0 + (1 - R0) * c * c * c * c*c;
-   float Tr = 1.f - Re;
-   float P = .25f + .5f * Re;
-   float RP = Re / P;
-   float TP = Tr / (1.f - P);
-
-   if (GetRandom(seed0, seed1) < P) {
-    { float k = (RP); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
 
-    { { ((currentRay).o).x = ((reflRay).o).x; ((currentRay).o).y = ((reflRay).o).y; ((currentRay).o).z = ((reflRay).o).z; }; { ((currentRay).d).x = ((reflRay).d).x; ((currentRay).d).y = ((reflRay).d).y; ((currentRay).d).z = ((reflRay).d).z; }; };
-    continue;
-   } else {
-    { float k = (TP); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
-    { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
-
-    { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (transDir).x; ((currentRay).d).y = (transDir).y; ((currentRay).d).z = (transDir).z; }; };
-    continue;
+    { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
+    break;
    }
+   case GLASS: {
+    Vec newDir;
+    { float k = (2.f * ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z)); { (newDir).x = k * (normal).x; (newDir).y = k * (normal).y; (newDir).z = k * (normal).z; } };
+    { (newDir).x = (currentRay.d).x - (newDir).x; (newDir).y = (currentRay.d).y - (newDir).y; (newDir).z = (currentRay.d).z - (newDir).z; };
+
+    Ray reflRay; { { ((reflRay).o).x = (hitPoint).x; ((reflRay).o).y = (hitPoint).y; ((reflRay).o).z = (hitPoint).z; }; { ((reflRay).d).x = (newDir).x; ((reflRay).d).y = (newDir).y; ((reflRay).d).z = (newDir).z; }; };
+    const bool into = (((normal).x * (nl).x + (normal).y * (nl).y + (normal).z * (nl).z) > 0);
+
+    const float nc = 1.f;
+    const float nt = obj->glass.ior;
+    const float nnt = into ? nc / nt : nt / nc;
+    const float ddn = ((currentRay.d).x * (nl).x + (currentRay.d).y * (nl).y + (currentRay.d).z * (nl).z);
+    const float cos2t = 1.f - nnt * nnt * (1.f - ddn * ddn);
+
+    if (cos2t < 0.f) {
+     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+
+     { { ((currentRay).o).x = ((reflRay).o).x; ((currentRay).o).y = ((reflRay).o).y; ((currentRay).o).z = ((reflRay).o).z; }; { ((currentRay).d).x = ((reflRay).d).x; ((currentRay).d).y = ((reflRay).d).y; ((currentRay).d).z = ((reflRay).d).z; }; };
+     continue;
+    }
+
+    const float kk = (into ? 1 : -1) * (ddn * nnt + sqrt(cos2t));
+    Vec nkk;
+    { float k = (kk); { (nkk).x = k * (normal).x; (nkk).y = k * (normal).y; (nkk).z = k * (normal).z; } };
+    Vec transDir;
+    { float k = (nnt); { (transDir).x = k * (currentRay.d).x; (transDir).y = k * (currentRay.d).y; (transDir).z = k * (currentRay.d).z; } };
+    { (transDir).x = (transDir).x - (nkk).x; (transDir).y = (transDir).y - (nkk).y; (transDir).z = (transDir).z - (nkk).z; };
+    { float l = 1.f / sqrt(((transDir).x * (transDir).x + (transDir).y * (transDir).y + (transDir).z * (transDir).z)); { float k = (l); { (transDir).x = k * (transDir).x; (transDir).y = k * (transDir).y; (transDir).z = k * (transDir).z; } }; };
+
+    const float a = nt - nc;
+    const float b = nt + nc;
+    const float R0 = a * a / (b * b);
+    const float c = 1 - (into ? -ddn : ((transDir).x * (normal).x + (transDir).y * (normal).y + (transDir).z * (normal).z));
+
+    const float Re = R0 + (1 - R0) * c * c * c * c*c;
+    const float Tr = 1.f - Re;
+    const float P = .25f + .5f * Re;
+    const float RP = Re / P;
+    const float TP = Tr / (1.f - P);
+
+    if (GetRandom(seed0, seed1) < P) {
+     { float k = (RP); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
+     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+
+     { { ((currentRay).o).x = ((reflRay).o).x; ((currentRay).o).y = ((reflRay).o).y; ((currentRay).o).z = ((reflRay).o).z; }; { ((currentRay).d).x = ((reflRay).d).x; ((currentRay).d).y = ((reflRay).d).y; ((currentRay).d).z = ((reflRay).d).z; }; };
+    } else {
+     { float k = (TP); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
+     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+
+     { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (transDir).x; ((currentRay).d).y = (transDir).y; ((currentRay).d).z = (transDir).z; }; };
+
+     if (into) {
+      currentSigmaS = obj->glass.sigmaS;
+      currentSigmaA = obj->glass.sigmaA;
+     } else {
+      currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+      currentSigmaA = PARAM_DEFAULT_SIGMA_A;
+     }
+     currentSigmaT = currentSigmaS + currentSigmaA;
+    }
+    break;
+   }
+# 360 "<stdin>"
+   default:
+    *result = rad;
+    return;
   }
  }
 }

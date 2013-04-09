@@ -611,7 +611,7 @@ private:
 		try {
 			VECTOR_CLASS<cl::Device> buildDevice;
 			buildDevice.push_back(oclDevice);
-			program.build(buildDevice,"-I. -I../common");
+			program.build(buildDevice, "-I. -I../common");
 		} catch (cl::Error err) {
 			cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
 			OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());

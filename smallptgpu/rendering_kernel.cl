@@ -22,9 +22,10 @@
 #include "camera.h"
 #include "geom.h"
 
-#define sigma_s .004f
-#define sigma_a .0001f
-#define sigma_t (sigma_s + sigma_a)
+// Kernel compilation parameters:
+//  PARAM_MAX_DEPTH
+//  PARAM_DEFAULT_SIGMA_S
+//  PARAM_DEFAULT_SIGMA_A
 
 float GetRandom(unsigned int *seed0, unsigned int *seed1) {
 	*seed0 = 36969 * ((*seed0) & 65535) + ((*seed0) >> 16);
@@ -119,8 +120,8 @@ void SampleHG(const float g, const float e1, const float e2, Vec *dir) {
 }
 
 float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
-		float *scatterDistance, unsigned int *seed0, unsigned int *seed1) {
-	*scatterDistance = SampleSegment(GetRandom(seed0, seed1), sigma_s, distance - EPSILON) + EPSILON;
+		float *scatterDistance, unsigned int *seed0, unsigned int *seed1, const float sigmaS) {
+	*scatterDistance = SampleSegment(GetRandom(seed0, seed1), sigmaS, distance - EPSILON) + EPSILON;
 
 	Vec scatterPoint;
 	vsmul(scatterPoint, *scatterDistance, currentRay->d);
@@ -140,7 +141,7 @@ float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
 
 	rinit(*scatterRay, scatterPoint, scatterDir);
 
-	return (1.f - exp(-sigma_s * (distance - EPSILON)));
+	return (1.f - exp(-sigmaS * (distance - EPSILON)));
 }
 
 void Radiance(
@@ -149,14 +150,19 @@ void Radiance(
 	const Ray *startRay,
 	unsigned int *seed0, unsigned int *seed1,
 	Vec *result) {
+	float currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+	float currentSigmaA = PARAM_DEFAULT_SIGMA_A;
+	float currentSigmaT = currentSigmaS + currentSigmaA;
+
 	Ray currentRay; rassign(currentRay, *startRay);
 	Vec rad; vinit(rad, 0.f, 0.f, 0.f);
+
 	Vec throughput; vinit(throughput, 1.f, 1.f, 1.f);
 
 	unsigned int depth = 0;
 	for (;; ++depth) {
 		// Removed Russian Roulette in order to improve execution on SIMT
-		if (depth > 6) {
+		if (depth > PARAM_MAX_DEPTH) {
 			*result = rad;
 			return;
 		}
@@ -165,29 +171,32 @@ void Radiance(
 		unsigned int id = 0; /* id of intersected object */
 		const bool hit = Intersect(spheres, sphereCount, &currentRay, &t, &id);
 
-		// Check if there is a scattering event
-		Ray scatterRay;
-		float scatterDistance;
-		const float scatteringProbability = Scatter(&currentRay, hit ? t : 999.f, &scatterRay,
-				&scatterDistance, seed0, seed1);
+		if (currentSigmaS > 0.f) {
+			// Check if there is a scattering event
+			Ray scatterRay;
+			float scatterDistance;
+			const float scatteringProbability = Scatter(&currentRay, hit ? t : 999.f, &scatterRay,
+					&scatterDistance, seed0, seed1, currentSigmaS);
 
-		// Is there the scatter event ?
-		if ((scatteringProbability > 0.f) && (GetRandom(seed0, seed1) <= scatteringProbability)) {
-			// There is, sample the volume
-			rassign(currentRay, scatterRay);
+			// Is there the scatter event ?
+			if ((scatteringProbability > 0.f) && (GetRandom(seed0, seed1) < scatteringProbability)) {
+				// There is, sample the volume
+				rassign(currentRay, scatterRay);
 
-			// Absorption
-			const float absorption = exp(-sigma_t * scatterDistance);
-			vsmul(throughput, absorption, throughput);
-			continue;
+				// Absorption
+				const float absorption = exp(-currentSigmaT * scatterDistance);
+				vsmul(throughput, absorption, throughput);
+				continue;
+			}
 		}
 			
 		if (!hit) {
 			*result = rad; /* if miss, return */
 			return;
 		}
-		
-		const float absorption = exp(-sigma_t * t);
+
+		// Absorption
+		const float absorption = exp(-currentSigmaT * t);
 		vsmul(throughput, absorption, throughput);
 
 		__global const Sphere *obj = &spheres[id]; /* the hit object */
@@ -209,7 +218,6 @@ void Radiance(
 		/* Add emitted light */
 		Vec eCol; vassign(eCol, obj->e);
 		if (!viszero(eCol)) {
-			vsmul(eCol, fabs(dp), eCol);
 			vmul(eCol, throughput, eCol);
 			vadd(rad, rad, eCol);
 
@@ -217,90 +225,141 @@ void Radiance(
 			return;
 		}
 
-		if (obj->refl == DIFF) { /* Ideal DIFFUSE reflection */
-			vmul(throughput, throughput, obj->c);
-
-			/* Diffuse component */
-
-			float r1 = 2.f * FLOAT_PI * GetRandom(seed0, seed1);
-			float r2 = GetRandom(seed0, seed1);
-			float r2s = sqrt(r2);
-
-			Vec w = nl;
-			Vec u, v;
-			CoordinateSystem(&w, &u, &v);
-
-			Vec newDir;
-			vsmul(u, cos(r1) * r2s, u);
-			vsmul(v, sin(r1) * r2s, v);
-			vadd(newDir, u, v);
-			vsmul(w, sqrt(1 - r2), w);
-			vadd(newDir, newDir, w);
-
-			rinit(currentRay, hitPoint, newDir);
-			continue;
-		} else if (obj->refl == SPEC) { /* Ideal SPECULAR reflection */
-			Vec newDir;
-			vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
-			vsub(newDir, currentRay.d, newDir);
-
-			vmul(throughput, throughput, obj->c);
-
-			rinit(currentRay, hitPoint, newDir);
-			continue;
-		} else {
-			Vec newDir;
-			vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
-			vsub(newDir, currentRay.d, newDir);
-
-			Ray reflRay; rinit(reflRay, hitPoint, newDir); /* Ideal dielectric REFRACTION */
-			int into = (vdot(normal, nl) > 0); /* Ray from outside going in? */
-
-			float nc = 1.f;
-			float nt = 1.5f;
-			float nnt = into ? nc / nt : nt / nc;
-			float ddn = vdot(currentRay.d, nl);
-			float cos2t = 1.f - nnt * nnt * (1.f - ddn * ddn);
-
-			if (cos2t < 0.f)  { /* Total internal reflection */
+		switch (obj->matType) {
+			case MATTE: {
 				vmul(throughput, throughput, obj->c);
 
-				rassign(currentRay, reflRay);
-				continue;
+				float r1 = 2.f * FLOAT_PI * GetRandom(seed0, seed1);
+				float r2 = GetRandom(seed0, seed1);
+				float r2s = sqrt(r2);
+
+				Vec w = nl;
+				Vec u, v;
+				CoordinateSystem(&w, &u, &v);
+
+				Vec newDir;
+				vsmul(u, cos(r1) * r2s, u);
+				vsmul(v, sin(r1) * r2s, v);
+				vadd(newDir, u, v);
+				vsmul(w, sqrt(1 - r2), w);
+				vadd(newDir, newDir, w);
+
+				rinit(currentRay, hitPoint, newDir);
+				break;
 			}
+			case MIRROR: {
+				Vec newDir;
+				vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
+				vsub(newDir, currentRay.d, newDir);
 
-			float kk = (into ? 1 : -1) * (ddn * nnt + sqrt(cos2t));
-			Vec nkk;
-			vsmul(nkk, kk, normal);
-			Vec transDir;
-			vsmul(transDir, nnt, currentRay.d);
-			vsub(transDir, transDir, nkk);
-			vnorm(transDir);
-
-			float a = nt - nc;
-			float b = nt + nc;
-			float R0 = a * a / (b * b);
-			float c = 1 - (into ? -ddn : vdot(transDir, normal));
-
-			float Re = R0 + (1 - R0) * c * c * c * c*c;
-			float Tr = 1.f - Re;
-			float P = .25f + .5f * Re;
-			float RP = Re / P;
-			float TP = Tr / (1.f - P);
-
-			if (GetRandom(seed0, seed1) < P) { /* R.R. */
-				vsmul(throughput, RP, throughput);
 				vmul(throughput, throughput, obj->c);
 
-				rassign(currentRay, reflRay);
-				continue;
-			} else {
-				vsmul(throughput, TP, throughput);
-				vmul(throughput, throughput, obj->c);
-
-				rinit(currentRay, hitPoint, transDir);
-				continue;
+				rinit(currentRay, hitPoint, newDir);
+				break;
 			}
+			case GLASS: {
+				Vec newDir;
+				vsmul(newDir,  2.f * vdot(normal, currentRay.d), normal);
+				vsub(newDir, currentRay.d, newDir);
+
+				Ray reflRay; rinit(reflRay, hitPoint, newDir); /* Ideal dielectric REFRACTION */
+				const bool into = (vdot(normal, nl) > 0); /* Ray from outside going in? */
+
+				const float nc = 1.f;
+				const float nt = obj->glass.ior;
+				const float nnt = into ? nc / nt : nt / nc;
+				const float ddn = vdot(currentRay.d, nl);
+				const float cos2t = 1.f - nnt * nnt * (1.f - ddn * ddn);
+
+				if (cos2t < 0.f)  { /* Total internal reflection */
+					vmul(throughput, throughput, obj->c);
+
+					rassign(currentRay, reflRay);
+					continue;
+				}
+
+				const float kk = (into ? 1 : -1) * (ddn * nnt + sqrt(cos2t));
+				Vec nkk;
+				vsmul(nkk, kk, normal);
+				Vec transDir;
+				vsmul(transDir, nnt, currentRay.d);
+				vsub(transDir, transDir, nkk);
+				vnorm(transDir);
+
+				const float a = nt - nc;
+				const float b = nt + nc;
+				const float R0 = a * a / (b * b);
+				const float c = 1 - (into ? -ddn : vdot(transDir, normal));
+
+				const float Re = R0 + (1 - R0) * c * c * c * c*c;
+				const float Tr = 1.f - Re;
+				const float P = .25f + .5f * Re;
+				const float RP = Re / P;
+				const float TP = Tr / (1.f - P);
+
+				if (GetRandom(seed0, seed1) < P) { /* R.R. */
+					vsmul(throughput, RP, throughput);
+					vmul(throughput, throughput, obj->c);
+
+					rassign(currentRay, reflRay);
+				} else {
+					vsmul(throughput, TP, throughput);
+					vmul(throughput, throughput, obj->c);
+
+					rinit(currentRay, hitPoint, transDir);
+
+					if (into) {
+						currentSigmaS = obj->glass.sigmaS;
+						currentSigmaA = obj->glass.sigmaA;
+					} else {
+						currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+						currentSigmaA = PARAM_DEFAULT_SIGMA_A;					
+					}
+					currentSigmaT = currentSigmaS + currentSigmaA;
+				}
+				break;
+			}
+//			case SSS: {
+//				vmul(throughput, throughput, obj->c);
+//
+//				if (GetRandom(seed0, seed1) < obj->sss.transparency) {
+//					// Transmitted component
+//					rinit(currentRay, hitPoint, currentRay.d);
+//
+//					const bool into = (vdot(normal, nl) > 0); /* Ray from outside going in? */
+//					if (into) {
+//						currentSigmaS = obj->sss.sigmaS;
+//						currentSigmaA = obj->sss.sigmaA;
+//					} else {
+//						currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+//						currentSigmaA = PARAM_DEFAULT_SIGMA_A;					
+//					}
+//					currentSigmaT = currentSigmaS + currentSigmaA;
+//				} else {
+//					// Diffuse component
+//
+//					float r1 = 2.f * FLOAT_PI * GetRandom(seed0, seed1);
+//					float r2 = GetRandom(seed0, seed1);
+//					float r2s = sqrt(r2);
+//
+//					Vec w = nl;
+//					Vec u, v;
+//					CoordinateSystem(&w, &u, &v);
+//
+//					Vec newDir;
+//					vsmul(u, cos(r1) * r2s, u);
+//					vsmul(v, sin(r1) * r2s, v);
+//					vadd(newDir, u, v);
+//					vsmul(w, sqrt(1 - r2), w);
+//					vadd(newDir, newDir, w);
+//
+//					rinit(currentRay, hitPoint, newDir);
+//				}
+//				break;
+//			}
+			default:
+				*result = rad;
+				return;
 		}
 	}
 }
