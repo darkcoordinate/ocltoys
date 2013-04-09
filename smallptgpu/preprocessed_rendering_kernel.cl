@@ -34,22 +34,41 @@ typedef struct {
 
 
 typedef enum {
- MATTE, MIRROR, GLASS
+ MATTE, MIRROR, GLASS, MATTETRANSLUCENT, GLOSSY, GLOSSYTRANSLUCENT
 } MaterialType;
 
 typedef struct {
  float rad;
- Vec p, e, c;
+ Vec p;
+ Vec e;
  MaterialType matType;
  union {
   struct {
+   Vec c;
+  } matte;
+  struct {
+   Vec c;
+  } mirror;
+  struct {
+   Vec c;
    float ior;
    float sigmaS, sigmaA;
   } glass;
   struct {
+   Vec c;
    float transparency;
    float sigmaS, sigmaA;
-  } sss;
+  } mattertranslucent;
+  struct {
+   Vec c;
+   float exponent;
+  } glossy;
+  struct {
+   Vec c;
+   float exponent;
+   float transparency;
+   float sigmaS, sigmaA;
+  } glossytranslucent;
  };
 } Sphere;
 # 24 "<stdin>" 2
@@ -176,6 +195,31 @@ float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
  return (1.f - exp(-sigmaS * (distance - 0.01f)));
 }
 
+void SpecularReflection(const Vec *wi, Vec *wo, const Vec *normal) {
+ { float k = (2.f * ((*normal).x * (*wi).x + (*normal).y * (*wi).y + (*normal).z * (*wi).z)); { (*wo).x = k * (*normal).x; (*wo).y = k * (*normal).y; (*wo).z = k * (*normal).z; } };
+ { (*wo).x = (*wi).x - (*wo).x; (*wo).y = (*wi).y - (*wo).y; (*wo).z = (*wi).z - (*wo).z; };
+}
+
+void GlossyReflection(const Vec *wi, Vec *wo, const Vec *normal, const float exponent,
+  const float u0, const float u1) {
+ const float phi = 2.f * 3.14159265358979323846f * u0;
+ const float sinTheta = pow(1.f - u1, exponent);
+ const float cosTheta = sqrt(1.f - sinTheta * sinTheta);
+ const float x = cos(phi) * sinTheta;
+ const float y = sin(phi) * sinTheta;
+ const float z = cosTheta;
+
+ Vec specDir;
+ SpecularReflection(wi, &specDir, normal);
+
+ Vec u, v;
+ CoordinateSystem(&specDir, &u, &v);
+
+ wo->x = x * u.x + y * v.x + z * specDir.x;
+ wo->y = x * u.y + y * v.y + z * specDir.y;
+ wo->z = x * u.z + y * v.z + z * specDir.z;
+}
+
 void Radiance(
  __global const Sphere *spheres,
  const unsigned int sphereCount,
@@ -241,11 +285,10 @@ void Radiance(
   { (normal).x = (hitPoint).x - (obj->p).x; (normal).y = (hitPoint).y - (obj->p).y; (normal).z = (hitPoint).z - (obj->p).z; };
   { float l = 1.f / sqrt(((normal).x * (normal).x + (normal).y * (normal).y + (normal).z * (normal).z)); { float k = (l); { (normal).x = k * (normal).x; (normal).y = k * (normal).y; (normal).z = k * (normal).z; } }; };
 
-  const float dp = ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z);
-  Vec nl;
 
-  const float invSignDP = -1.f * sign(dp);
-  { float k = (invSignDP); { (nl).x = k * (normal).x; (nl).y = k * (normal).y; (nl).z = k * (normal).z; } };
+  const bool into = (((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z) < 0.f);
+  Vec shadeNormal;
+  { float k = (into ? 1.f : -1.f); { (shadeNormal).x = k * (normal).x; (shadeNormal).y = k * (normal).y; (shadeNormal).z = k * (normal).z; } };
 
 
   Vec eCol; { (eCol).x = (obj->e).x; (eCol).y = (obj->e).y; (eCol).z = (obj->e).z; };
@@ -259,13 +302,13 @@ void Radiance(
 
   switch (obj->matType) {
    case MATTE: {
-    { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+    { (throughput).x = (throughput).x * (obj->matte.c).x; (throughput).y = (throughput).y * (obj->matte.c).y; (throughput).z = (throughput).z * (obj->matte.c).z; };
 
-    float r1 = 2.f * 3.14159265358979323846f * GetRandom(seed0, seed1);
-    float r2 = GetRandom(seed0, seed1);
-    float r2s = sqrt(r2);
+    const float r1 = 2.f * 3.14159265358979323846f * GetRandom(seed0, seed1);
+    const float r2 = GetRandom(seed0, seed1);
+    const float r2s = sqrt(r2);
 
-    Vec w = nl;
+    Vec w = shadeNormal;
     Vec u, v;
     CoordinateSystem(&w, &u, &v);
 
@@ -280,11 +323,10 @@ void Radiance(
     break;
    }
    case MIRROR: {
-    Vec newDir;
-    { float k = (2.f * ((normal).x * (currentRay.d).x + (normal).y * (currentRay.d).y + (normal).z * (currentRay.d).z)); { (newDir).x = k * (normal).x; (newDir).y = k * (normal).y; (newDir).z = k * (normal).z; } };
-    { (newDir).x = (currentRay.d).x - (newDir).x; (newDir).y = (currentRay.d).y - (newDir).y; (newDir).z = (currentRay.d).z - (newDir).z; };
+    { (throughput).x = (throughput).x * (obj->mirror.c).x; (throughput).y = (throughput).y * (obj->mirror.c).y; (throughput).z = (throughput).z * (obj->mirror.c).z; };
 
-    { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+    Vec newDir;
+    SpecularReflection(&currentRay.d, &newDir, &normal);
 
     { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
     break;
@@ -295,16 +337,15 @@ void Radiance(
     { (newDir).x = (currentRay.d).x - (newDir).x; (newDir).y = (currentRay.d).y - (newDir).y; (newDir).z = (currentRay.d).z - (newDir).z; };
 
     Ray reflRay; { { ((reflRay).o).x = (hitPoint).x; ((reflRay).o).y = (hitPoint).y; ((reflRay).o).z = (hitPoint).z; }; { ((reflRay).d).x = (newDir).x; ((reflRay).d).y = (newDir).y; ((reflRay).d).z = (newDir).z; }; };
-    const bool into = (((normal).x * (nl).x + (normal).y * (nl).y + (normal).z * (nl).z) > 0);
 
     const float nc = 1.f;
     const float nt = obj->glass.ior;
     const float nnt = into ? nc / nt : nt / nc;
-    const float ddn = ((currentRay.d).x * (nl).x + (currentRay.d).y * (nl).y + (currentRay.d).z * (nl).z);
+    const float ddn = ((currentRay.d).x * (shadeNormal).x + (currentRay.d).y * (shadeNormal).y + (currentRay.d).z * (shadeNormal).z);
     const float cos2t = 1.f - nnt * nnt * (1.f - ddn * ddn);
 
     if (cos2t < 0.f) {
-     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+     { (throughput).x = (throughput).x * (obj->glass.c).x; (throughput).y = (throughput).y * (obj->glass.c).y; (throughput).z = (throughput).z * (obj->glass.c).z; };
 
      { { ((currentRay).o).x = ((reflRay).o).x; ((currentRay).o).y = ((reflRay).o).y; ((currentRay).o).z = ((reflRay).o).z; }; { ((currentRay).d).x = ((reflRay).d).x; ((currentRay).d).y = ((reflRay).d).y; ((currentRay).d).z = ((reflRay).d).z; }; };
      continue;
@@ -331,12 +372,12 @@ void Radiance(
 
     if (GetRandom(seed0, seed1) < P) {
      { float k = (RP); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
-     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+     { (throughput).x = (throughput).x * (obj->glass.c).x; (throughput).y = (throughput).y * (obj->glass.c).y; (throughput).z = (throughput).z * (obj->glass.c).z; };
 
      { { ((currentRay).o).x = ((reflRay).o).x; ((currentRay).o).y = ((reflRay).o).y; ((currentRay).o).z = ((reflRay).o).z; }; { ((currentRay).d).x = ((reflRay).d).x; ((currentRay).d).y = ((reflRay).d).y; ((currentRay).d).z = ((reflRay).d).z; }; };
     } else {
      { float k = (TP); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
-     { (throughput).x = (throughput).x * (obj->c).x; (throughput).y = (throughput).y * (obj->c).y; (throughput).z = (throughput).z * (obj->c).z; };
+     { (throughput).x = (throughput).x * (obj->glass.c).x; (throughput).y = (throughput).y * (obj->glass.c).y; (throughput).z = (throughput).z * (obj->glass.c).z; };
 
      { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (transDir).x; ((currentRay).d).y = (transDir).y; ((currentRay).d).z = (transDir).z; }; };
 
@@ -351,7 +392,55 @@ void Radiance(
     }
     break;
    }
-# 360 "<stdin>"
+   case MATTETRANSLUCENT: {
+    { (throughput).x = (throughput).x * (obj->mattertranslucent.c).x; (throughput).y = (throughput).y * (obj->mattertranslucent.c).y; (throughput).z = (throughput).z * (obj->mattertranslucent.c).z; };
+
+
+    bool transmit;
+    if (GetRandom(seed0, seed1) < obj->mattertranslucent.transparency) {
+     if (into) {
+      currentSigmaS = obj->mattertranslucent.sigmaS;
+      currentSigmaA = obj->mattertranslucent.sigmaA;
+     } else {
+      currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+      currentSigmaA = PARAM_DEFAULT_SIGMA_A;
+     }
+     currentSigmaT = currentSigmaS + currentSigmaA;
+
+     transmit = true;
+    } else
+     transmit = false;
+
+    const float r1 = 2.f * 3.14159265358979323846f * GetRandom(seed0, seed1);
+    const float r2 = GetRandom(seed0, seed1);
+    const float r2s = sqrt(r2);
+
+    Vec u, v;
+    CoordinateSystem(&shadeNormal, &u, &v);
+
+    Vec newDir;
+    { float k = (cos(r1) * r2s); { (u).x = k * (u).x; (u).y = k * (u).y; (u).z = k * (u).z; } };
+    { float k = (sin(r1) * r2s); { (v).x = k * (v).x; (v).y = k * (v).y; (v).z = k * (v).z; } };
+    { (newDir).x = (u).x + (v).x; (newDir).y = (u).y + (v).y; (newDir).z = (u).z + (v).z; };
+    Vec w;
+    { float k = ((transmit ? -1.f : 1.) * sqrt(1 - r2)); { (w).x = k * (shadeNormal).x; (w).y = k * (shadeNormal).y; (w).z = k * (shadeNormal).z; } };
+    { (newDir).x = (newDir).x + (w).x; (newDir).y = (newDir).y + (w).y; (newDir).z = (newDir).z + (w).z; };
+
+    { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
+    break;
+   }
+   case GLOSSY: {
+    { (throughput).x = (throughput).x * (obj->glossy.c).x; (throughput).y = (throughput).y * (obj->glossy.c).y; (throughput).z = (throughput).z * (obj->glossy.c).z; };
+
+    Vec newDir;
+    GlossyReflection(&currentRay.d, &newDir, &normal,
+      obj->glossy.exponent,
+      GetRandom(seed0, seed1), GetRandom(seed0, seed1));
+
+    { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
+    break;
+   }
+# 419 "<stdin>"
    default:
     *result = rad;
     return;

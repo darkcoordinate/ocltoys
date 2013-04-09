@@ -35,22 +35,41 @@ typedef struct {
 #define rassign(a, b) { vassign((a).o, (b).o); vassign((a).d, (b).d); }
 
 typedef enum {
-	MATTE, MIRROR, GLASS //, SSS
+	MATTE, MIRROR, GLASS, MATTETRANSLUCENT, GLOSSY //, GLOSSYTRANSLUCENT
 } MaterialType; /* material types, used in radiance() */
 
 typedef struct {
 	float rad; /* radius */
-	Vec p, e, c; /* position, emission, color */
+	Vec p; // Position, emission
+	Vec e; // Emission
 	MaterialType matType;
 	union {
 		struct {
+			Vec c;
+		} matte;
+		struct {
+			Vec c;
+		} mirror;
+		struct {
+			Vec c;
 			float ior; // Index of refraction
 			float sigmaS, sigmaA; // Volume rendering
 		} glass;
 		struct {
+			Vec c;
 			float transparency;
 			float sigmaS, sigmaA; // Volume rendering
-		} sss;
+		} mattertranslucent;
+		struct {
+			Vec c;
+			float exponent;
+		} glossy;
+		struct {
+			Vec c;
+			float exponent;
+			float transparency;
+			float sigmaS, sigmaA; // Volume rendering
+		} glossytranslucent;
 	};
 } Sphere;
 

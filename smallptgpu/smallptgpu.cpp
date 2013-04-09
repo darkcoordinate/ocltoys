@@ -578,19 +578,19 @@ private:
 						throw std::runtime_error("Failed to parse diffuse sphere #" + boost::lexical_cast<std::string>(i));
 
 					s->matType = MATTE;
-					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
-					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
-					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->matte.c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->matte.c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->matte.c.z = boost::lexical_cast<float>(sphereArgs[11]);
 					break;
 				}
 				case 1: {
 					if ((sphereArgs.size() != 12))
-						throw std::runtime_error("Failed to parse mirror sphere #" + boost::lexical_cast<std::string>(i));
-					
+						throw std::runtime_error("Failed to parse mirror sphere #" + boost::lexical_cast<std::string> (i));
+
 					s->matType = MIRROR;
-					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
-					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
-					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->mirror.c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->mirror.c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->mirror.c.z = boost::lexical_cast<float>(sphereArgs[11]);
 					break;
 				}
 				case 2: {
@@ -598,29 +598,54 @@ private:
 						throw std::runtime_error("Failed to parse glass sphere #" + boost::lexical_cast<std::string>(i));
 
 					s->matType = GLASS;
-					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
-					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
-					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->glass.c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->glass.c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->glass.c.z = boost::lexical_cast<float>(sphereArgs[11]);
 					s->glass.ior = boost::lexical_cast<float>(sphereArgs[12]);
 					s->glass.sigmaS = boost::lexical_cast<float>(sphereArgs[13]);
 					s->glass.sigmaA = boost::lexical_cast<float>(sphereArgs[14]);
 					break;
 				}
-//			case 3: {
-//					if ((sphereArgs.size() != 15))
-//						throw std::runtime_error("Failed to parse glass sphere #" + boost::lexical_cast<std::string>(i));
-//
-//					s->matType = SSS;
-//					s->c.x = boost::lexical_cast<float>(sphereArgs[9]);
-//					s->c.y = boost::lexical_cast<float>(sphereArgs[10]);
-//					s->c.z = boost::lexical_cast<float>(sphereArgs[11]);
-//					s->sss.transparency = boost::lexical_cast<float>(sphereArgs[12]);
-//					s->sss.sigmaS = boost::lexical_cast<float>(sphereArgs[13]);
-//					s->sss.sigmaA = boost::lexical_cast<float>(sphereArgs[14]);
-//					break;
-//				}
+				case 3: {
+					if ((sphereArgs.size() != 15))
+						throw std::runtime_error("Failed to parse mattertranslucent sphere #" + boost::lexical_cast<std::string>(i));
+
+					s->matType = MATTETRANSLUCENT;
+					s->mattertranslucent.c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->mattertranslucent.c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->mattertranslucent.c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->mattertranslucent.transparency = boost::lexical_cast<float>(sphereArgs[12]);
+					s->mattertranslucent.sigmaS = boost::lexical_cast<float>(sphereArgs[13]);
+					s->mattertranslucent.sigmaA = boost::lexical_cast<float>(sphereArgs[14]);
+					break;
+				}
+				case 4: {
+					if ((sphereArgs.size() != 13))
+						throw std::runtime_error("Failed to parse glossy sphere #" + boost::lexical_cast<std::string>(i));
+
+					s->matType = GLOSSY;
+					s->glossy.c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->glossy.c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->glossy.c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->glossy.exponent = boost::lexical_cast<float>(sphereArgs[12]);
+					break;
+				}
+				case 5: {
+					if ((sphereArgs.size() != 16))
+						throw std::runtime_error("Failed to parse glossytranslucent sphere #" + boost::lexical_cast<std::string>(i));
+
+					s->matType = GLOSSYTRANSLUCENT;
+					s->glossytranslucent.c.x = boost::lexical_cast<float>(sphereArgs[9]);
+					s->glossytranslucent.c.y = boost::lexical_cast<float>(sphereArgs[10]);
+					s->glossytranslucent.c.z = boost::lexical_cast<float>(sphereArgs[11]);
+					s->glossytranslucent.exponent = boost::lexical_cast<float>(sphereArgs[12]);
+					s->glossytranslucent.transparency = boost::lexical_cast<float>(sphereArgs[13]);
+					s->glossytranslucent.sigmaS = boost::lexical_cast<float>(sphereArgs[14]);
+					s->glossytranslucent.sigmaA = boost::lexical_cast<float>(sphereArgs[15]);
+					break;
+				}
 				default:
-					throw std::runtime_error("Unknown material for sphere #" + boost::lexical_cast<int>(i));
+					throw std::runtime_error("Unknown material for sphere #" + boost::lexical_cast<std::string>(i));
 			}
 		}
 
