@@ -21,11 +21,13 @@
 
 include_directories(../common)
 
+PreprocessOCLKernel(rendering_kernel.cl)
+
 set(SMALLPTGPU_SRCS
 	smallptgpu.cpp
 	)
 
-add_executable(smallptgpu ${SMALLPTGPU_SRCS})
+add_executable(smallptgpu ${SMALLPTGPU_SRCS} preprocessed_rendering_kernel.cl)
 
 TARGET_LINK_LIBRARIES(smallptgpu ocltoys_common ${GLUT_LIBRARY} ${OPENGL_LIBRARY} ${OPENCL_LIBRARIES} ${Boost_LIBRARIES})
 

@@ -19,17 +19,23 @@
 #   OCLToys website: http://code.google.com/p/ocltoys                     #
 ###########################################################################
 
-include_directories(../common)
+###########################################################################
+#
+# Definition of the function for preprocessing OpenCL kernels
+#
+###########################################################################
 
-PreprocessOCLKernel(rendering_kernel.cl)
+FUNCTION(PreprocessOCLKernel KERNEL)
+	MESSAGE(STATUS "Preprocessing OpenCL kernel: " ${KERNEL})
 
-set(JULIAGPU_SRCS
-	juliagpu.cpp
-	)
-
-add_executable(juliagpu ${JULIAGPU_SRCS} preprocessed_rendering_kernel.cl)
-
-TARGET_LINK_LIBRARIES(juliagpu ocltoys_common ${GLUT_LIBRARY} ${OPENGL_LIBRARY} ${OPENCL_LIBRARIES} ${Boost_LIBRARIES})
-
-# This instructs FREEGLUT to emit a pragma for the static version
-SET_TARGET_PROPERTIES(juliagpu PROPERTIES COMPILE_DEFINITIONS FREEGLUT_STATIC)
+	IF(WIN32)
+		# TODO
+		MESSAGE(STATUS "ERROR: Kernel preprocessing is not available on Windows (TODO)")
+	ELSE(WIN32)
+		add_custom_command(
+			OUTPUT preprocessed_${KERNEL}
+			COMMAND cpp -I. -I../common <${KERNEL} >preprocessed_${KERNEL}
+			MAIN_DEPENDENCY ${KERNEL}
+		)
+	ENDIF(WIN32)
+ENDFUNCTION(PreprocessOCLKernel)

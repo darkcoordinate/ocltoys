@@ -80,7 +80,7 @@ protected:
 		boost::program_options::options_description opts("JuliaGPU options");
 
 		opts.add_options()
-			("kernel,k", boost::program_options::value<std::string>()->default_value("rendering_kernel.cl"),
+			("kernel,k", boost::program_options::value<std::string>()->default_value("preprocessed_rendering_kernel.cl"),
 				"OpenCL kernel file name")
 			("workgroupsize,z", boost::program_options::value<size_t>(), "OpenCL workgroup size");
 
@@ -611,7 +611,7 @@ private:
 		try {
 			VECTOR_CLASS<cl::Device> buildDevice;
 			buildDevice.push_back(oclDevice);
-			program.build(buildDevice,"-I. -I../common -I..\\common");
+			program.build(buildDevice,"-I. -I../common");
 		} catch (cl::Error err) {
 			cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
 			OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());
