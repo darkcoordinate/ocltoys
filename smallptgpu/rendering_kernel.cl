@@ -22,6 +22,10 @@
 #include "camera.h"
 #include "geom.h"
 
+#define sigma_s .004f
+#define sigma_a .0001f
+#define sigma_t (sigma_s + sigma_a)
+
 float GetRandom(unsigned int *seed0, unsigned int *seed1) {
 	*seed0 = 36969 * ((*seed0) & 65535) + ((*seed0) >> 16);
 	*seed1 = 18000 * ((*seed1) & 65535) + ((*seed1) >> 16);
@@ -84,6 +88,61 @@ int Intersect(
 	return (*t < inf);
 }
 
+void CoordinateSystem(const Vec *v1, Vec *v2, Vec *v3) {
+	if (fabs(v1->x) > fabs(v1->y)) {
+		float invLen = 1.f / sqrt(v1->x * v1->x + v1->z * v1->z);
+		v2->x = -v1->z * invLen;
+		v2->y = 0.f;
+		v2->z = v1->x * invLen;
+	} else {
+		float invLen = 1.f / sqrt(v1->y * v1->y + v1->z * v1->z);
+		v2->x = 0.f;
+		v2->y = v1->z * invLen;
+		v2->z = -v1->y * invLen;
+	}
+
+	vxcross(*v3, *v1, *v2);
+}
+
+float SampleSegment(const float epsilon, const float sigma, const float smax) {
+	return -log(1.f - epsilon * (1.f - exp(-sigma * smax))) / sigma;
+}
+
+void SampleHG(const float g, const float e1, const float e2, Vec *dir) {
+	const float s = 1.f - 2.f * e1;
+	const float cost = (s + 2.f * g * g * g * (-1.f + e1) * e1 + g * g * s + 2.f * g * (1.f - e1 + e1 * e1)) / ((1.f + g * s)*(1.f + g * s));
+	const float sint = sqrt(1.f - cost * cost);
+
+	dir->x = cos(2.f * FLOAT_PI * e2) * sint;
+	dir->y = sin(2.f * FLOAT_PI * e2) * sint;
+	dir->z = cost;
+}
+
+float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
+		float *scatterDistance, unsigned int *seed0, unsigned int *seed1) {
+	*scatterDistance = SampleSegment(GetRandom(seed0, seed1), sigma_s, distance - EPSILON) + EPSILON;
+
+	Vec scatterPoint;
+	vsmul(scatterPoint, *scatterDistance, currentRay->d);
+	vadd(scatterPoint, currentRay->o, scatterPoint);
+
+	// Sample a direction ~ Henyey-Greenstein's phase function
+	Vec dir;
+	SampleHG(-.5f, GetRandom(seed0, seed1), GetRandom(seed0, seed1), &dir);
+
+	Vec u, v;
+	CoordinateSystem(&currentRay->d, &u, &v);
+
+	Vec scatterDir;
+	scatterDir.x = u.x * dir.x + v.x * dir.y + currentRay->d.x * dir.z;
+	scatterDir.y = u.y * dir.x + v.y * dir.y + currentRay->d.y * dir.z;
+	scatterDir.z = u.z * dir.x + v.z * dir.y + currentRay->d.z * dir.z;
+
+	rinit(*scatterRay, scatterPoint, scatterDir);
+
+	return (1.f - exp(-sigma_s * (distance - EPSILON)));
+}
+
 void Radiance(
 	__global const Sphere *spheres,
 	const unsigned int sphereCount,
@@ -104,10 +163,32 @@ void Radiance(
 
 		float t; /* distance to intersection */
 		unsigned int id = 0; /* id of intersected object */
-		if (!Intersect(spheres, sphereCount, &currentRay, &t, &id)) {
+		const bool hit = Intersect(spheres, sphereCount, &currentRay, &t, &id);
+
+		// Check if there is a scattering event
+		Ray scatterRay;
+		float scatterDistance;
+		const float scatteringProbability = Scatter(&currentRay, hit ? t : 999.f, &scatterRay,
+				&scatterDistance, seed0, seed1);
+
+		// Is there the scatter event ?
+		if ((scatteringProbability > 0.f) && (GetRandom(seed0, seed1) <= scatteringProbability)) {
+			// There is, sample the volume
+			rassign(currentRay, scatterRay);
+
+			// Absorption
+			const float absorption = exp(-sigma_t * scatterDistance);
+			vsmul(throughput, absorption, throughput);
+			continue;
+		}
+			
+		if (!hit) {
 			*result = rad; /* if miss, return */
 			return;
 		}
+		
+		const float absorption = exp(-sigma_t * t);
+		vsmul(throughput, absorption, throughput);
 
 		__global const Sphere *obj = &spheres[id]; /* the hit object */
 
@@ -145,19 +226,9 @@ void Radiance(
 			float r2 = GetRandom(seed0, seed1);
 			float r2s = sqrt(r2);
 
-			Vec w; vassign(w, nl);
-
-			Vec u, a;
-			if (fabs(w.x) > .1f) {
-					vinit(a, 0.f, 1.f, 0.f);
-			} else {
-					vinit(a, 1.f, 0.f, 0.f);
-			}
-			vxcross(u, a, w);
-			vnorm(u);
-
-			Vec v;
-			vxcross(v, w, u);
+			Vec w = nl;
+			Vec u, v;
+			CoordinateSystem(&w, &u, &v);
 
 			Vec newDir;
 			vsmul(u, cos(r1) * r2s, u);
@@ -166,8 +237,7 @@ void Radiance(
 			vsmul(w, sqrt(1 - r2), w);
 			vadd(newDir, newDir, w);
 
-			currentRay.o = hitPoint;
-			currentRay.d = newDir;
+			rinit(currentRay, hitPoint, newDir);
 			continue;
 		} else if (obj->refl == SPEC) { /* Ideal SPECULAR reflection */
 			Vec newDir;

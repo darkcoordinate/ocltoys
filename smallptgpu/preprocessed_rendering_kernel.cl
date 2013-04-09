@@ -44,6 +44,10 @@ typedef struct {
 } Sphere;
 # 24 "<stdin>" 2
 
+
+
+
+
 float GetRandom(unsigned int *seed0, unsigned int *seed1) {
  *seed0 = 36969 * ((*seed0) & 65535) + ((*seed0) >> 16);
  *seed1 = 18000 * ((*seed1) & 65535) + ((*seed1) >> 16);
@@ -106,6 +110,61 @@ int Intersect(
  return (*t < inf);
 }
 
+void CoordinateSystem(const Vec *v1, Vec *v2, Vec *v3) {
+ if (fabs(v1->x) > fabs(v1->y)) {
+  float invLen = 1.f / sqrt(v1->x * v1->x + v1->z * v1->z);
+  v2->x = -v1->z * invLen;
+  v2->y = 0.f;
+  v2->z = v1->x * invLen;
+ } else {
+  float invLen = 1.f / sqrt(v1->y * v1->y + v1->z * v1->z);
+  v2->x = 0.f;
+  v2->y = v1->z * invLen;
+  v2->z = -v1->y * invLen;
+ }
+
+ { (*v3).x = (*v1).y * (*v2).z - (*v1).z * (*v2).y; (*v3).y = (*v1).z * (*v2).x - (*v1).x * (*v2).z; (*v3).z = (*v1).x * (*v2).y - (*v1).y * (*v2).x; };
+}
+
+float SampleSegment(const float epsilon, const float sigma, const float smax) {
+ return -log(1.f - epsilon * (1.f - exp(-sigma * smax))) / sigma;
+}
+
+void SampleHG(const float g, const float e1, const float e2, Vec *dir) {
+ const float s = 1.f - 2.f * e1;
+ const float cost = (s + 2.f * g * g * g * (-1.f + e1) * e1 + g * g * s + 2.f * g * (1.f - e1 + e1 * e1)) / ((1.f + g * s)*(1.f + g * s));
+ const float sint = sqrt(1.f - cost * cost);
+
+ dir->x = cos(2.f * 3.14159265358979323846f * e2) * sint;
+ dir->y = sin(2.f * 3.14159265358979323846f * e2) * sint;
+ dir->z = cost;
+}
+
+float Scatter(const Ray *currentRay, const float distance, Ray *scatterRay,
+  float *scatterDistance, unsigned int *seed0, unsigned int *seed1) {
+ *scatterDistance = SampleSegment(GetRandom(seed0, seed1), .004f, distance - 0.01f) + 0.01f;
+
+ Vec scatterPoint;
+ { float k = (*scatterDistance); { (scatterPoint).x = k * (currentRay->d).x; (scatterPoint).y = k * (currentRay->d).y; (scatterPoint).z = k * (currentRay->d).z; } };
+ { (scatterPoint).x = (currentRay->o).x + (scatterPoint).x; (scatterPoint).y = (currentRay->o).y + (scatterPoint).y; (scatterPoint).z = (currentRay->o).z + (scatterPoint).z; };
+
+
+ Vec dir;
+ SampleHG(-.5f, GetRandom(seed0, seed1), GetRandom(seed0, seed1), &dir);
+
+ Vec u, v;
+ CoordinateSystem(&currentRay->d, &u, &v);
+
+ Vec scatterDir;
+ scatterDir.x = u.x * dir.x + v.x * dir.y + currentRay->d.x * dir.z;
+ scatterDir.y = u.y * dir.x + v.y * dir.y + currentRay->d.y * dir.z;
+ scatterDir.z = u.z * dir.x + v.z * dir.y + currentRay->d.z * dir.z;
+
+ { { ((*scatterRay).o).x = (scatterPoint).x; ((*scatterRay).o).y = (scatterPoint).y; ((*scatterRay).o).z = (scatterPoint).z; }; { ((*scatterRay).d).x = (scatterDir).x; ((*scatterRay).d).y = (scatterDir).y; ((*scatterRay).d).z = (scatterDir).z; }; };
+
+ return (1.f - exp(-.004f * (distance - 0.01f)));
+}
+
 void Radiance(
  __global const Sphere *spheres,
  const unsigned int sphereCount,
@@ -126,10 +185,32 @@ void Radiance(
 
   float t;
   unsigned int id = 0;
-  if (!Intersect(spheres, sphereCount, &currentRay, &t, &id)) {
+  const bool hit = Intersect(spheres, sphereCount, &currentRay, &t, &id);
+
+
+  Ray scatterRay;
+  float scatterDistance;
+  const float scatteringProbability = Scatter(&currentRay, hit ? t : 999.f, &scatterRay,
+    &scatterDistance, seed0, seed1);
+
+
+  if ((scatteringProbability > 0.f) && (GetRandom(seed0, seed1) <= scatteringProbability)) {
+
+   { { ((currentRay).o).x = ((scatterRay).o).x; ((currentRay).o).y = ((scatterRay).o).y; ((currentRay).o).z = ((scatterRay).o).z; }; { ((currentRay).d).x = ((scatterRay).d).x; ((currentRay).d).y = ((scatterRay).d).y; ((currentRay).d).z = ((scatterRay).d).z; }; };
+
+
+   const float absorption = exp(-(.004f + .0001f) * scatterDistance);
+   { float k = (absorption); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
+   continue;
+  }
+
+  if (!hit) {
    *result = rad;
    return;
   }
+
+  const float absorption = exp(-(.004f + .0001f) * t);
+  { float k = (absorption); { (throughput).x = k * (throughput).x; (throughput).y = k * (throughput).y; (throughput).z = k * (throughput).z; } };
 
   __global const Sphere *obj = &spheres[id];
 
@@ -167,19 +248,9 @@ void Radiance(
    float r2 = GetRandom(seed0, seed1);
    float r2s = sqrt(r2);
 
-   Vec w; { (w).x = (nl).x; (w).y = (nl).y; (w).z = (nl).z; };
-
-   Vec u, a;
-   if (fabs(w.x) > .1f) {
-     { (a).x = 0.f; (a).y = 1.f; (a).z = 0.f; };
-   } else {
-     { (a).x = 1.f; (a).y = 0.f; (a).z = 0.f; };
-   }
-   { (u).x = (a).y * (w).z - (a).z * (w).y; (u).y = (a).z * (w).x - (a).x * (w).z; (u).z = (a).x * (w).y - (a).y * (w).x; };
-   { float l = 1.f / sqrt(((u).x * (u).x + (u).y * (u).y + (u).z * (u).z)); { float k = (l); { (u).x = k * (u).x; (u).y = k * (u).y; (u).z = k * (u).z; } }; };
-
-   Vec v;
-   { (v).x = (w).y * (u).z - (w).z * (u).y; (v).y = (w).z * (u).x - (w).x * (u).z; (v).z = (w).x * (u).y - (w).y * (u).x; };
+   Vec w = nl;
+   Vec u, v;
+   CoordinateSystem(&w, &u, &v);
 
    Vec newDir;
    { float k = (cos(r1) * r2s); { (u).x = k * (u).x; (u).y = k * (u).y; (u).z = k * (u).z; } };
@@ -188,8 +259,7 @@ void Radiance(
    { float k = (sqrt(1 - r2)); { (w).x = k * (w).x; (w).y = k * (w).y; (w).z = k * (w).z; } };
    { (newDir).x = (newDir).x + (w).x; (newDir).y = (newDir).y + (w).y; (newDir).z = (newDir).z + (w).z; };
 
-   currentRay.o = hitPoint;
-   currentRay.d = newDir;
+   { { ((currentRay).o).x = (hitPoint).x; ((currentRay).o).y = (hitPoint).y; ((currentRay).o).z = (hitPoint).z; }; { ((currentRay).d).x = (newDir).x; ((currentRay).d).y = (newDir).y; ((currentRay).d).z = (newDir).z; }; };
    continue;
   } else if (obj->refl == SPEC) {
    Vec newDir;
