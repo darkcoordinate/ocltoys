@@ -36,7 +36,7 @@ ELSE (WIN32)
 		/opt/local/include
 		DOC "The directory where GL/glut.h resides")
 	FIND_LIBRARY( GLUT_LIBRARY
-		NAMES glut GLUT freeglut freeglut32 freeglut_static
+		NAMES libglut.a freeglut_static glut GLUT freeglut freeglut32
 		PATHS
 		/usr/lib64
 		/usr/lib
