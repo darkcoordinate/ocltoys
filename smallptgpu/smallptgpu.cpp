@@ -38,24 +38,37 @@
 #include <boost/filesystem.hpp>
 #include <boost/format.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/thread.hpp>
+
+#define GAMMA_TABLE_SIZE 1024
 
 class SmallPTGPU : public OCLToy {
 public:
-	SmallPTGPU() : OCLToy("SmallPTGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)"),
-			samplesBuff(NULL), pixelsBuff(NULL), seedsBuff(NULL), cameraBuff(NULL),
-			spheresBuff(NULL), kernelWorkGroupSize(64), pixels(NULL), currentSample(0), currentSphere(0) {
+	SmallPTGPU() : OCLToy("SmallPTGPU v" OCLTOYS_VERSION_MAJOR "." OCLTOYS_VERSION_MINOR " (OCLToys: http://code.google.com/p/ocltoys)") {
+		millisTimerFunc = 100;
+		kernelToneMapping = NULL;
+		mergedPixels = NULL;
+
+		currentSphere = 0;
 		maxDepth = 6;
 		defaultVolumeSigmaS = 0.f;
 		defaultVolumeSigmaA = 0.f;
 
-		useIdleCallback = true;
-		kernelIterations = 1;
-		sampleSec = 0.0;
-		lastUserInputTime = WallClockTime();
+		pixelsBuff = NULL;
+		
+		const float gamma = 2.2f;
+		float x = 0.f;
+		const float dx = 1.f / GAMMA_TABLE_SIZE;
+		for (unsigned int i = 0; i < GAMMA_TABLE_SIZE; ++i, x += dx)
+			gammaTable[i] = powf(std::max(std::min(x, 1.f), 0.f), 1.f / gamma);
 	}
 
 	virtual ~SmallPTGPU() {
 		FreeBuffers();
+		
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i)
+			delete kernelsSmallPT[i];
+		delete kernelToneMapping;
 	}
 
 protected:
@@ -73,11 +86,19 @@ protected:
 	}
 
 	virtual int RunToy() {
+		samplesBuff.resize(selectedDevices.size(), NULL);
+		seedsBuff.resize(selectedDevices.size(), NULL);
+		cameraBuff.resize(selectedDevices.size(), NULL);
+		spheresBuff.resize(selectedDevices.size(), NULL);
+
+		pixels.resize(selectedDevices.size(), NULL);
+		sampleSec.resize(selectedDevices.size(), 0.0);
+		currentSample.resize(selectedDevices.size(), 0);
+
 		ReadScene(commandLineOpts["scene"].as<std::string>());
 
 		SetUpOpenCL();
-		UpdateCameraBuffer();
-		UpdateRender();
+		StartRendering();
 
 		glutMainLoop();
 
@@ -89,11 +110,26 @@ protected:
 	//--------------------------------------------------------------------------
 
 	virtual void DisplayCallBack() {
-		UpdateRender();
-
 		glClear(GL_COLOR_BUFFER_BIT);
 		glRasterPos2i(0, 0);
-		glDrawPixels(windowWidth, windowHeight, GL_RGB, GL_FLOAT, pixels);
+		if (selectedDevices.size() == 1)
+			glDrawPixels(windowWidth, windowHeight, GL_RGB, GL_FLOAT, pixels[0]);
+		else {
+			// Multiple devices, I have to merge the results and to apply tone mapping
+			const unsigned count = windowWidth * windowHeight * 3;
+			std::copy(pixels[0], pixels[0] + count, mergedPixels);
+
+			for (unsigned int i = 1; i < selectedDevices.size(); ++i) {
+				for (unsigned int j = 0; j < count; ++j)
+					mergedPixels[j] += pixels[i][j];
+			}
+
+			const float scale = 1.f / selectedDevices.size();
+			for (unsigned int i = 0; i < count; ++i)
+				mergedPixels[i] = Radiance2PixelFloat(scale * mergedPixels[i]);
+
+			glDrawPixels(windowWidth, windowHeight, GL_RGB, GL_FLOAT, mergedPixels);
+		}
 
 		// Title
 		glColor3f(1.f, 1.f, 1.f);
@@ -101,6 +137,16 @@ protected:
 		PrintString(GLUT_BITMAP_HELVETICA_18, windowTitle);
 
 		// Caption line 0
+		double globalSampleSec = 0.0;
+		unsigned int globalPass = 0;
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			globalSampleSec += sampleSec[i];
+			globalPass += currentSample[i] + 1;
+		}
+		
+		const std::string captionString = boost::str(boost::format("[Pass %d][%.1fM Sample/sec]") %
+				globalPass % (globalSampleSec / 1000000.0));
+
 		glColor3f(1.f, 1.f, 1.f);
 		glRasterPos2i(4, 10);
 		PrintString(GLUT_BITMAP_HELVETICA_18, captionString);
@@ -123,6 +169,8 @@ protected:
 	//--------------------------------------------------------------------------
 
 	virtual void ReshapeCallBack(int newWidth, int newHeight) {
+		StopRendering();
+
 		windowWidth = newWidth;
 		windowHeight = newHeight;
 
@@ -136,8 +184,9 @@ protected:
 		ResizeFrameBuffer();
 		UpdateKernelsArgs();
 
+		StartRendering();
+
 		glutPostRedisplay();
-		lastUserInputTime = WallClockTime();
 	}
 
 #define MOVE_STEP 0.5f
@@ -158,8 +207,9 @@ protected:
 					f << windowWidth << " " << windowHeight << std::endl;
 					f << "255" << std::endl;
 
+					const float *img = (selectedDevices.size() == 1) ? pixels[0] : mergedPixels;
 					for (int y = (int)windowHeight - 1; y >= 0; --y) {
-						const float *p = &pixels[y * windowWidth * 3];
+						const float *p = &img[y * windowWidth * 3];
 						for (int x = 0; x < (int)windowWidth; ++x) {
 							const float rv = std::min(std::max(*p++, 0.f), 1.f);
 							const std::string r = boost::lexical_cast<std::string>((int)(rv * 255.f + .5f));
@@ -180,11 +230,14 @@ protected:
 			case 27: // Escape key
 			case 'q':
 			case 'Q':
+				StopRendering();
 				OCLTOY_LOG("Done");
+
 				exit(EXIT_SUCCESS);
 				break;
 			case ' ': // Restart rendering
-				currentSample = 0;
+				StopRendering();
+				StartRendering();
 				break;
 			case 'h':
 				printHelp = (!printHelp);
@@ -280,23 +333,22 @@ protected:
 				break;
 		}
 
-		if (cameraUpdated) {
-			UpdateCamera();
-			UpdateCameraBuffer();
-			// Restart the rendering
-			currentSample = 0;
+		if (cameraUpdated || sceneUpdated) {
+			StopRendering();
+
+			if (cameraUpdated) {
+				UpdateCamera();
+				UpdateCameraBuffer();
+			}
+
+			if (sceneUpdated)
+				UpdateSpheresBuffer();
+
+			StartRendering();
 		}
 
-		if (sceneUpdated) {
-			UpdateSpheresBuffer();
-			// Restart the rendering
-			currentSample = 0;
-		}
-
-		if (needRedisplay) {
+		if (needRedisplay)
 			glutPostRedisplay();
-			lastUserInputTime = WallClockTime();
-		}
 	}
 
 	void SpecialCallBack(int key, int x, int y) {
@@ -357,39 +409,32 @@ protected:
 		}
 
 		if (cameraUpdated) {
+			StopRendering();
+
 			UpdateCamera();
 			UpdateCameraBuffer();
-			// Restart the rendering
-			currentSample = 0;
+
+			StartRendering();
 		}
 
-		if (needRedisplay) {
+		if (needRedisplay)
 			glutPostRedisplay();
-			lastUserInputTime = WallClockTime();
-		}
 	}
 
-	void MouseCallBack(int button, int state, int x, int y) {
-	}
-
-	virtual void MotionCallBack(int x, int y) {
-		bool needRedisplay = true;
-
-		if (needRedisplay) {
-			glutPostRedisplay();
-			lastUserInputTime = WallClockTime();
-		}
-	}
-
-	void IdleCallBack() {
+	void TimerCallBack(int id) {
 		glutPostRedisplay();
+
+		// Refresh the timer
+		glutTimerFunc(millisTimerFunc, &OCLToy::GlutTimerFunc, 0);
 	}
 
 	//--------------------------------------------------------------------------
 	// OpenCL related code
 	//--------------------------------------------------------------------------
 
-	virtual unsigned int GetMaxDeviceCountSupported() const { return 1; }
+	virtual unsigned int GetMaxDeviceCountSupported() const {
+		return std::numeric_limits<unsigned int>::max();
+	}
 
 private:
 	void SetUpOpenCL() {
@@ -403,40 +448,46 @@ private:
 		// Read the kernel
 		const std::string kernelSource = ReadSources(kernelFileName);
 
-		// Create the kernel program
-		cl::Device &oclDevice = selectedDevices[0];
-		cl::Context &oclContext = deviceContexts[0];
+		// Kernel options
+		std::stringstream ss;
+		ss.precision(6);
+		ss << std::scientific <<
+				"-DPARAM_MAX_DEPTH=" << maxDepth << "  "
+				"-DPARAM_DEFAULT_SIGMA_S=" << defaultVolumeSigmaS << "f "
+				"-DPARAM_DEFAULT_SIGMA_A=" << defaultVolumeSigmaA << "f "
+				"-I. -I../common";
+		const std::string opts = ss.str();
+		OCLTOY_LOG("Kernel parameters: " << opts);
+
+		// Compile the kernel for each device
+		kernelsSmallPT.resize(selectedDevices.size(), NULL);
+		kernelsWorkGroupSize.resize(selectedDevices.size(), 0);
 		cl::Program::Sources source(1, std::make_pair(kernelSource.c_str(), kernelSource.length()));
-		cl::Program program = cl::Program(oclContext, source);
-		try {
-			// Build options
-			std::stringstream ss;
-			ss.precision(6);
-			ss << std::scientific <<
-					"-DPARAM_MAX_DEPTH=" << maxDepth << "  "
-					"-DPARAM_DEFAULT_SIGMA_S=" << defaultVolumeSigmaS << "f "
-					"-DPARAM_DEFAULT_SIGMA_A=" << defaultVolumeSigmaA << "f "
-					"-I. -I../common";
-			const std::string opts = ss.str();
-			OCLTOY_LOG("Kernel parameters: " << opts);
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			// Create the kernel program
+			cl::Device &oclDevice = selectedDevices[i];
+			cl::Context &oclContext = deviceContexts[i];
+			cl::Program program = cl::Program(oclContext, source);
+			try {
+				VECTOR_CLASS<cl::Device> buildDevice;
+				buildDevice.push_back(oclDevice);
+				program.build(buildDevice, opts.c_str());
+			} catch (cl::Error err) {
+				cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
+				OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());
 
-			VECTOR_CLASS<cl::Device> buildDevice;
-			buildDevice.push_back(oclDevice);
-			program.build(buildDevice, opts.c_str());
-		} catch (cl::Error err) {
-			cl::STRING_CLASS strError = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(oclDevice);
-			OCLTOY_LOG("Kernel compilation error:\n" << strError.c_str());
+				throw err;
+			}
 
-			throw err;
+			kernelsSmallPT[i] = new cl::Kernel(program, "SmallPTGPU");
+			kernelsSmallPT[i]->getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &kernelsWorkGroupSize[i]);
+			if (commandLineOpts.count("workgroupsize"))
+				kernelsWorkGroupSize[i] = commandLineOpts["workgroupsize"].as<size_t>();
+			OCLTOY_LOG("Using workgroup size  (Device " + boost::lexical_cast<std::string>(i) + "): " << kernelsWorkGroupSize[i]);
+
+			if ((selectedDevices.size() == 1) && (i == 0))
+				kernelToneMapping = new cl::Kernel(program, "ToneMapping");
 		}
-
-		kernelSmallPT = cl::Kernel(program, "SmallPTGPU");
-		kernelSmallPT.getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &kernelWorkGroupSize);
-		if (commandLineOpts.count("workgroupsize"))
-			kernelWorkGroupSize = commandLineOpts["workgroupsize"].as<size_t>();
-		OCLTOY_LOG("Using workgroup size: " << kernelWorkGroupSize);
-
-		kernelToneMapping = cl::Kernel(program, "ToneMapping");
 		
 		//----------------------------------------------------------------------
 		// Allocate buffer
@@ -449,20 +500,34 @@ private:
 		//----------------------------------------------------------------------
 
 		UpdateKernelsArgs();
+
+		UpdateCameraBuffer();
+		UpdateSpheresBuffer();
 	}
 
 	void FreeBuffers() {
-		FreeOCLBuffer(0, &samplesBuff);
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			FreeOCLBuffer(0, &samplesBuff[i]);			
+			delete[] pixels[i];
+			pixels[i] = NULL;
+			FreeOCLBuffer(0, &seedsBuff[i]);
+			FreeOCLBuffer(0, &cameraBuff[i]);
+			FreeOCLBuffer(0, &spheresBuff[i]);
+		}
+
 		FreeOCLBuffer(0, &pixelsBuff);
-		delete[] pixels;
-		FreeOCLBuffer(0, &seedsBuff);
-		FreeOCLBuffer(0, &cameraBuff);
-		FreeOCLBuffer(0, &spheresBuff);
+
+		delete[] mergedPixels;
+		mergedPixels = NULL;
 	}
 
 	void AllocateBuffers() {
-		AllocOCLBufferRO(0, &cameraBuff, &camera, sizeof(Camera), "CameraBuffer");
-		AllocOCLBufferRO(0, &spheresBuff, &spheres[0], sizeof(Sphere) * spheres.size(), "SpheresBuffer");
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			AllocOCLBufferRO(i, &cameraBuff[i], &camera, sizeof(Camera),
+					"CameraBuffer (Device " + boost::lexical_cast<std::string>(i) + ")");
+			AllocOCLBufferRO(i, &spheresBuff[i], &spheres[0], sizeof(Sphere) * spheres.size(),
+					"SpheresBuffer (Device " + boost::lexical_cast<std::string>(i) + ")");
+		}
 
 		// Allocate the frame buffer
 		ResizeFrameBuffer();
@@ -668,115 +733,82 @@ private:
 	}
 
 	void ResizeFrameBuffer() {
-		cl::CommandQueue &oclQueue = deviceQueues[0];
 		const size_t pixelCount = windowWidth * windowHeight;
 
-		// Allocate the sample buffer
-		AllocOCLBufferRW(0, &samplesBuff, pixelCount * sizeof(float) * 3, "SamplesBuffer");
-
-		// Allocate the frame buffer
-		delete[] pixels;
-		pixels = new float[pixelCount * 3];
-		std::fill(&pixels[0], &pixels[pixelCount * 3], 0.f);
-		AllocOCLBufferWO(0, &pixelsBuff, pixelCount * sizeof(float) * 3, "PixelsBuffer");
-
-		// Allocate the seeds for random number generator
-		AllocOCLBufferRW(0, &seedsBuff, pixelCount * sizeof(unsigned int) * 2, "SeedsBuffer");
-
 		unsigned int *seeds = new unsigned int[pixelCount * 2];
-		for (size_t i = 0; i < pixelCount * 2; i++) {
-			seeds[i] = rand();
-			if (seeds[i] < 2)
-				seeds[i] = 2;
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			cl::CommandQueue &oclQueue = deviceQueues[i];
+
+			// Allocate the sample buffer
+			AllocOCLBufferRW(i, &samplesBuff[i], pixelCount * sizeof(float) * 3,
+					"SamplesBuffer (Device " + boost::lexical_cast<std::string>(i) + ")");
+
+			// Allocate the frame buffer
+			delete[] pixels[i];
+			pixels[i] = new float[pixelCount * 3];
+			std::fill(pixels[i], pixels[i] + pixelCount * 3, 0.f);
+
+			// Allocate the seeds for random number generator
+			AllocOCLBufferRW(i, &seedsBuff[i], pixelCount * sizeof(unsigned int) * 2,
+					"SeedsBuffer (Device " + boost::lexical_cast<std::string>(i) + ")");
+
+			for (unsigned int j = 0; j < pixelCount * 2; j++)
+				seeds[j] = 2 + 2 * i * pixelCount + j;
+
+			oclQueue.enqueueWriteBuffer(*seedsBuff[i],
+					CL_TRUE,
+					0,
+					seedsBuff[i]->getInfo<CL_MEM_SIZE>(),
+					seeds);
 		}
-		oclQueue.enqueueWriteBuffer(*seedsBuff,
-				CL_TRUE,
-				0,
-				seedsBuff->getInfo<CL_MEM_SIZE>(),
-				seeds);
 		delete[] seeds;
 
-		// Better to restart load balancing
-		kernelIterations = 1;
-		currentSample = 0;
+		if (selectedDevices.size() == 1)
+			AllocOCLBufferWO(0, &pixelsBuff, pixelCount * sizeof(float) * 3, "PixelsBuffer");
+		else {
+			delete[] mergedPixels;
+			mergedPixels = new float[pixelCount * 3];
+		}
 	}
 
 	void UpdateKernelsArgs() {
-		kernelSmallPT.setArg(0, *samplesBuff);
-		kernelSmallPT.setArg(1, *seedsBuff);
-		kernelSmallPT.setArg(2, *cameraBuff);
-		kernelSmallPT.setArg(3, (unsigned int)spheres.size());
-		kernelSmallPT.setArg(4, *spheresBuff);
-		kernelSmallPT.setArg(5, windowWidth);
-		kernelSmallPT.setArg(6, windowHeight);
-		kernelSmallPT.setArg(7, currentSample);
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			kernelsSmallPT[i]->setArg(0, *samplesBuff[i]);
+			kernelsSmallPT[i]->setArg(1, *seedsBuff[i]);
+			kernelsSmallPT[i]->setArg(2, *cameraBuff[i]);
+			kernelsSmallPT[i]->setArg(3, (unsigned int)spheres.size());
+			kernelsSmallPT[i]->setArg(4, *spheresBuff[i]);
+			kernelsSmallPT[i]->setArg(5, windowWidth);
+			kernelsSmallPT[i]->setArg(6, windowHeight);
+		}
 
-		kernelToneMapping.setArg(0, *samplesBuff);
-		kernelToneMapping.setArg(1, *pixelsBuff);
-		kernelToneMapping.setArg(2, windowWidth);
-		kernelToneMapping.setArg(3, windowHeight);
+		if (selectedDevices.size() == 1) {
+			kernelToneMapping->setArg(0, *samplesBuff[0]);
+			kernelToneMapping->setArg(1, *pixelsBuff);
+			kernelToneMapping->setArg(2, windowWidth);
+			kernelToneMapping->setArg(3, windowHeight);
+		}
 	}
 
 	void UpdateCameraBuffer() {
-		cl::CommandQueue &oclQueue = deviceQueues[0];
-		oclQueue.enqueueWriteBuffer(*cameraBuff,
-				CL_FALSE,
-				0,
-				cameraBuff->getInfo<CL_MEM_SIZE>(),
-				&camera);
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			cl::CommandQueue &oclQueue = deviceQueues[i];
+			oclQueue.enqueueWriteBuffer(*cameraBuff[i],
+					CL_FALSE,
+					0,
+					cameraBuff[i]->getInfo<CL_MEM_SIZE>(),
+					&camera);
+		}
 	}
 
 	void UpdateSpheresBuffer() {
-		cl::CommandQueue &oclQueue = deviceQueues[0];
-		oclQueue.enqueueWriteBuffer(*spheresBuff,
-				CL_FALSE,
-				0,
-				spheresBuff->getInfo<CL_MEM_SIZE>(),
-				&spheres[0]);		
-	}
-
-	void UpdateRender() {
-		const double startTime = WallClockTime();
-
-		size_t globalThreads = windowWidth * windowHeight;
-		if (globalThreads % kernelWorkGroupSize != 0)
-			globalThreads = (globalThreads / kernelWorkGroupSize + 1) * kernelWorkGroupSize;
-
-		cl::CommandQueue &oclQueue = deviceQueues[0];
-		for (unsigned int i = 0; i < kernelIterations; ++i) {
-			// Set kernel arguments
-			kernelSmallPT.setArg(7, currentSample++);
-
-			// Enqueue a kernel run
-			oclQueue.enqueueNDRangeKernel(kernelSmallPT, cl::NullRange,
-					cl::NDRange(globalThreads), cl::NDRange(kernelWorkGroupSize));
-		}
-
-		// Image tone mapping
-		oclQueue.enqueueNDRangeKernel(kernelToneMapping, cl::NullRange,
-					cl::NDRange(globalThreads), cl::NDRange(kernelWorkGroupSize));
-
-		// Read back the result
-		oclQueue.enqueueReadBuffer(
-				*pixelsBuff,
-				CL_TRUE,
-				0,
-				pixelsBuff->getInfo<CL_MEM_SIZE>(),
-				pixels);
-
-		const double elapsedTime = WallClockTime() - startTime;
-		// A simple trick to smooth sample/sec value
-		const double k = 0.1;
-		sampleSec = sampleSec * (1.0 - k) + k * (kernelIterations * windowWidth * windowHeight / elapsedTime);
-		captionString = boost::str(boost::format("[Pass %d][Rendering time (%d iterations per frame): %.3f secs (%.1fM Sample/sec)]") %
-				(currentSample + 1) % kernelIterations % elapsedTime % (sampleSec / 1000000.0));
-
-		if (elapsedTime < 0.075) {
-			// Too fast, increase the number of kernel iterations
-			++kernelIterations;
-		} else if (elapsedTime > 0.1) {
-			// Too slow, decrease the number of kernel iterations
-			kernelIterations = std::max(kernelIterations - 1u, 1u);
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			cl::CommandQueue &oclQueue = deviceQueues[i];
+			oclQueue.enqueueWriteBuffer(*spheresBuff[i],
+					CL_FALSE,
+					0,
+					spheresBuff[i]->getInfo<CL_MEM_SIZE>(),
+					&spheres[0]);
 		}
 	}
 
@@ -811,27 +843,130 @@ private:
 		glDisable(GL_BLEND);
 	}
 
-	double lastUserInputTime;
+	float Radiance2PixelFloat(const float x) const {
+		// Very slow !
+		// return powf(x, 1.f / 2.2f);
 
-	cl::Buffer *samplesBuff;
+		const u_int index = std::max(std::min(
+			static_cast<int>(floorf(GAMMA_TABLE_SIZE * x)),
+			GAMMA_TABLE_SIZE - 1), 0);
+		return gammaTable[index];
+	}
+
+	//--------------------------------------------------------------------------
+	// Rendering thread related methods
+	//--------------------------------------------------------------------------
+
+	void StartRendering() {
+		renderThreads.resize(selectedDevices.size());
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i)
+			renderThreads[i] = new boost::thread(RenderThreadImpl, this, i);
+	}
+
+	void StopRendering() {
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i)
+			renderThreads[i]->interrupt();
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i)
+			renderThreads[i]->join();
+	}
+
+	static void RenderThreadImpl(SmallPTGPU *smallptgpu, const unsigned int threadIndex) {
+		try {
+			size_t globalThreads = smallptgpu->windowWidth * smallptgpu->windowHeight;
+			if (globalThreads % smallptgpu->kernelsWorkGroupSize[threadIndex] != 0)
+				globalThreads = (globalThreads / smallptgpu->kernelsWorkGroupSize[threadIndex] + 1) * smallptgpu->kernelsWorkGroupSize[threadIndex];
+
+			unsigned int kernelIterations = 1;
+			smallptgpu->sampleSec[threadIndex] = 0.0;
+			smallptgpu->currentSample[threadIndex] = 0;
+			while (!boost::this_thread::interruption_requested()) {
+				const double startTime = WallClockTime();
+
+				cl::CommandQueue &oclQueue = smallptgpu->deviceQueues[threadIndex];
+				for (unsigned int i = 0; i < kernelIterations; ++i) {
+					// Set kernel arguments
+					smallptgpu->kernelsSmallPT[threadIndex]->setArg(7, smallptgpu->currentSample[threadIndex]++);
+
+					// Enqueue a kernel run
+					oclQueue.enqueueNDRangeKernel(*(smallptgpu->kernelsSmallPT[threadIndex]), cl::NullRange,
+							cl::NDRange(globalThreads), cl::NDRange(smallptgpu->kernelsWorkGroupSize[threadIndex]));
+				}
+
+				if (smallptgpu->selectedDevices.size() == 1) {
+					// Image tone mapping
+					oclQueue.enqueueNDRangeKernel(*(smallptgpu->kernelToneMapping), cl::NullRange,
+								cl::NDRange(globalThreads), cl::NDRange(smallptgpu->kernelsWorkGroupSize[threadIndex]));
+
+					// Read back the result
+					oclQueue.enqueueReadBuffer(
+							*(smallptgpu->pixelsBuff),
+							CL_TRUE,
+							0,
+							smallptgpu->pixelsBuff->getInfo<CL_MEM_SIZE>(),
+							smallptgpu->pixels[0]);
+				} else {
+					// Read back the result
+					oclQueue.enqueueReadBuffer(
+							*(smallptgpu->samplesBuff[threadIndex]),
+							CL_TRUE,
+							0,
+							smallptgpu->samplesBuff[threadIndex]->getInfo<CL_MEM_SIZE>(),
+							smallptgpu->pixels[threadIndex]);
+				}
+
+				const double elapsedTime = WallClockTime() - startTime;
+
+				// A simple trick to smooth sample/sec value
+				const double k = 0.1;
+				smallptgpu->sampleSec[threadIndex] = smallptgpu->sampleSec[threadIndex] * (1.0 - k) +
+						k * (kernelIterations * smallptgpu->windowWidth * smallptgpu->windowHeight / elapsedTime);
+
+				if (elapsedTime < 0.075) {
+					// Too fast, increase the number of kernel iterations
+					++kernelIterations;
+				} else if (elapsedTime > 0.1) {
+					// Too slow, decrease the number of kernel iterations
+					kernelIterations = std::max(kernelIterations - 1u, 1u);
+				}
+			}
+		} catch (cl::Error err) {
+			OCLTOY_LOG("RenderThreadImpl OpenCL ERROR: " << err.what() << "(" << OCLErrorString(err.err()) << ")");
+		} catch (std::runtime_error err) {
+			OCLTOY_LOG("RenderThreadImpl RUNTIME ERROR: " << err.what());
+		} catch (std::exception err) {
+			OCLTOY_LOG("RenderThreadImpl ERROR: " << err.what());
+		}
+	}
+
+	std::vector<cl::Buffer *> samplesBuff;
+	std::vector<cl::Buffer *> seedsBuff;
+	std::vector<cl::Buffer *> cameraBuff;
+	std::vector<cl::Buffer *> spheresBuff;
+
+	std::vector<cl::Kernel *> kernelsSmallPT;
+	std::vector<size_t> kernelsWorkGroupSize;
+	// This kernel is compiled and used only if one single device has been selected
+	cl::Kernel *kernelToneMapping;
+
+	float gammaTable[GAMMA_TABLE_SIZE];
+	std::vector<float *> pixels;
+	// Used only when one single device is selected
 	cl::Buffer *pixelsBuff;
-	cl::Buffer *seedsBuff;
-	cl::Buffer *cameraBuff;
-	cl::Buffer *spheresBuff;
+	// Used only when multiple devices are selected
+	float *mergedPixels;
 
-	cl::Kernel kernelSmallPT, kernelToneMapping;
-	size_t kernelWorkGroupSize;
-	unsigned int kernelIterations;
-
-	float *pixels;
 	Camera camera;
 	std::vector<Sphere> spheres;
 	unsigned int maxDepth;
 	float defaultVolumeSigmaS, defaultVolumeSigmaA;
 
-	double sampleSec;
-	unsigned int currentSample, currentSphere;
-	std::string captionString;
+	unsigned int currentSphere;
+
+	// Thread statistics
+	std::vector<double> sampleSec;
+	std::vector<unsigned int> currentSample;
+
+	std::vector<boost::thread *> renderThreads;
 };
 
 int main(int argc, char **argv) {
