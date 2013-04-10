@@ -169,6 +169,24 @@ void GlossyReflection(const Vec *wi, Vec *wo, const Vec *normal, const float exp
 	wo->z = x * u.z + y * v.z + z * specDir.z;
 }
 
+void GlossyTransmission(const Vec *wi, Vec *wo, const Vec *normal, const float exponent,
+		const float u0, const float u1) {
+	const float phi = 2.f * FLOAT_PI * u0;
+	const float sinTheta = pow(1.f - u1, exponent);
+	const float cosTheta = sqrt(1.f - sinTheta * sinTheta);
+	const float x = cos(phi) * sinTheta;
+	const float y = sin(phi) * sinTheta;
+	const float z = cosTheta;
+
+	Vec specDir = *wi;
+	Vec u, v;
+	CoordinateSystem(&specDir, &u, &v);
+
+	wo->x = x * u.x + y * v.x + z * specDir.x;
+	wo->y = x * u.y + y * v.y + z * specDir.y;
+	wo->z = x * u.z + y * v.z + z * specDir.z;
+}
+
 void Radiance(
 	__global const Sphere *spheres,
 	const unsigned int sphereCount,
@@ -275,7 +293,7 @@ void Radiance(
 				vmul(throughput, throughput, obj->mirror.c);
 
 				Vec newDir;
-				SpecularReflection(&currentRay.d, &newDir, &normal);
+				SpecularReflection(&currentRay.d, &newDir, &shadeNormal);
 
 				rinit(currentRay, hitPoint, newDir);
 				break;
@@ -382,40 +400,41 @@ void Radiance(
 				vmul(throughput, throughput, obj->glossy.c);
 
 				Vec newDir;
-				GlossyReflection(&currentRay.d, &newDir, &normal,
+				GlossyReflection(&currentRay.d, &newDir, &shadeNormal,
 						obj->glossy.exponent,
 						GetRandom(seed0, seed1), GetRandom(seed0, seed1));
 
 				rinit(currentRay, hitPoint, newDir);
 				break;
 			}
-//			case GLOSSYTRANSLUCENT: {
-//				vmul(throughput, throughput, obj->glossytranslucent.c);
-//
-//				// Transmitted or reflect ?
-//				bool transmit = true;
-//				if (GetRandom(seed0, seed1) < obj->glossytranslucent.transparency) {
-//					if (into) {
-//						currentSigmaS = obj->glossytranslucent.sigmaS;
-//						currentSigmaA = obj->glossytranslucent.sigmaA;
-//					} else {
-//						currentSigmaS = PARAM_DEFAULT_SIGMA_S;
-//						currentSigmaA = PARAM_DEFAULT_SIGMA_A;					
-//					}
-//					currentSigmaT = currentSigmaS + currentSigmaA;
-//
-//					transmit = true;
-//				} else
-//					transmit = false;
-//
-//				Vec newDir;
-//				Glossy(transmit, &currentRay.d, &newDir, &normal,
-//						obj->glossytranslucent.exponent,
-//						GetRandom(seed0, seed1), GetRandom(seed0, seed1));
-//
-//				rinit(currentRay, hitPoint, newDir);
-//				break;
-//			}
+			case GLOSSYTRANSLUCENT: {
+				// Transmitted or reflect ?
+				Vec newDir;
+				if (GetRandom(seed0, seed1) < obj->glossytranslucent.transparency) {
+					vmul(throughput, throughput, obj->glossytranslucent.c);
+
+					if (into) {
+						currentSigmaS = obj->glossytranslucent.sigmaS;
+						currentSigmaA = obj->glossytranslucent.sigmaA;
+					} else {
+						currentSigmaS = PARAM_DEFAULT_SIGMA_S;
+						currentSigmaA = PARAM_DEFAULT_SIGMA_A;					
+					}
+					currentSigmaT = currentSigmaS + currentSigmaA;
+
+					GlossyTransmission(&currentRay.d, &newDir, &shadeNormal,
+							obj->glossytranslucent.exponent,
+							GetRandom(seed0, seed1), GetRandom(seed0, seed1));
+				} else {
+					// Using white reflections
+					GlossyReflection(&currentRay.d, &newDir, &shadeNormal,
+							obj->glossytranslucent.exponent,
+							GetRandom(seed0, seed1), GetRandom(seed0, seed1));
+				}
+
+				rinit(currentRay, hitPoint, newDir);
+				break;
+			}
 			default:
 				*result = rad;
 				return;

@@ -35,7 +35,7 @@ typedef struct {
 #define rassign(a, b) { vassign((a).o, (b).o); vassign((a).d, (b).d); }
 
 typedef enum {
-	MATTE, MIRROR, GLASS, MATTETRANSLUCENT, GLOSSY //, GLOSSYTRANSLUCENT
+	MATTE, MIRROR, GLASS, MATTETRANSLUCENT, GLOSSY, GLOSSYTRANSLUCENT
 } MaterialType; /* material types, used in radiance() */
 
 typedef struct {
