@@ -25,6 +25,6 @@
 // The configured options and settings for OCLToys
 
 #define OCLTOYS_VERSION_MAJOR "1"
-#define OCLTOYS_VERSION_MINOR "0devel1"
+#define OCLTOYS_VERSION_MINOR "0"
 
 #endif	/* _OCLTOYS_CFG_H */

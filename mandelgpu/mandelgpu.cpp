@@ -85,11 +85,11 @@ protected:
 		glDisable(GL_BLEND);
 
 		// Title
+		glColor3f(1.f, 1.f, 1.f);
 		glRasterPos2i(4, windowHeight - 10);
 		PrintString(GLUT_BITMAP_8_BY_13, windowTitle.c_str());
 
 		// Caption line 0
-		glColor3f(1.f, 1.f, 1.f);
 		glRasterPos2i(4, 5);
 		PrintString(GLUT_BITMAP_8_BY_13, captionString.c_str());
 

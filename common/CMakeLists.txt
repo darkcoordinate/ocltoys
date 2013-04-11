@@ -20,7 +20,7 @@
 ###########################################################################
 
 set(OCLTOYS_VERSION_MAJOR 1)
-set(OCLTOYS_VERSION_MINOR 0devel1)
+set(OCLTOYS_VERSION_MINOR 0)
 
 # Configure a header file to pass some of the CMake settings
 # to the source code
