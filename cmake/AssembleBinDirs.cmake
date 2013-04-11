@@ -71,7 +71,44 @@ ELSE (WIN32)
 		DEPENDS ${OCLTOYS_BIN_WIN64_DIR}
 		COMMENT "Building ${OCLTOYS_BIN_WIN64_DIR}.zip")
 
+	# Linux 64bit
+	set(OCLTOYS_BIN_LINUX64_DIR "ocltoys-linux64-v1.0")
+	add_custom_command(
+		OUTPUT "${OCLTOYS_BIN_LINUX64_DIR}"
+		COMMAND rm -rf ${OCLTOYS_BIN_LINUX64_DIR}
+		COMMAND mkdir ${OCLTOYS_BIN_LINUX64_DIR}
+		COMMAND cp AUTHORS.txt COPYING.txt README.txt ${OCLTOYS_BIN_LINUX64_DIR}
+		# Common
+		COMMAND mkdir ${OCLTOYS_BIN_LINUX64_DIR}/common
+		COMMAND cp common/vec.h common/camera.h ${OCLTOYS_BIN_LINUX64_DIR}/common
+		# MandelGPU
+		COMMAND mkdir ${OCLTOYS_BIN_LINUX64_DIR}/mandelgpu
+		COMMAND cp mandelgpu/README.txt ${OCLTOYS_BIN_LINUX64_DIR}/mandelgpu
+		COMMAND cp mandelgpu/*.cl ${OCLTOYS_BIN_LINUX64_DIR}/mandelgpu
+		COMMAND cp mandelgpu/mandelgpu ${OCLTOYS_BIN_LINUX64_DIR}/mandelgpu
+		# JuliaGPU
+		COMMAND mkdir ${OCLTOYS_BIN_LINUX64_DIR}/juliagpu
+		COMMAND cp juliagpu/README.txt ${OCLTOYS_BIN_LINUX64_DIR}/juliagpu
+		COMMAND cp juliagpu/*.cl ${OCLTOYS_BIN_LINUX64_DIR}/juliagpu
+		COMMAND cp juliagpu/juliagpu ${OCLTOYS_BIN_LINUX64_DIR}/juliagpu
+		# SmallPTGPU
+		COMMAND mkdir ${OCLTOYS_BIN_LINUX64_DIR}/smallptgpu
+		COMMAND mkdir ${OCLTOYS_BIN_LINUX64_DIR}/smallptgpu/scenes
+		COMMAND cp smallptgpu/README.txt ${OCLTOYS_BIN_LINUX64_DIR}/smallptgpu
+		COMMAND cp smallptgpu/*.cl ${OCLTOYS_BIN_LINUX64_DIR}/smallptgpu
+		COMMAND cp smallptgpu/scenes/*.scn ${OCLTOYS_BIN_LINUX64_DIR}/smallptgpu/scenes
+		COMMAND cp smallptgpu/smallptgpu ${OCLTOYS_BIN_LINUX64_DIR}/smallptgpu
+		COMMENT "Building ${OCLTOYS_BIN_LINUX64_DIR}")
+
+	add_custom_command(
+		OUTPUT "${OCLTOYS_BIN_LINUX64_DIR}.zip"
+		COMMAND zip -r ${OCLTOYS_BIN_LINUX64_DIR}.zip ${OCLTOYS_BIN_LINUX64_DIR}
+		COMMAND rm -rf ${OCLTOYS_BIN_LINUX64_DIR}
+		DEPENDS ${OCLTOYS_BIN_LINUX64_DIR}
+		COMMENT "Building ${OCLTOYS_BIN_LINUX64_DIR}.zip")
+
 	add_custom_target(ocltoys_win64_zip DEPENDS "${OCLTOYS_BIN_WIN64_DIR}.zip")
+	add_custom_target(ocltoys_linux64_zip DEPENDS "${OCLTOYS_BIN_LINUX64_DIR}.zip")
 ENDIF(WIN32)
 
 ###########################################################################
