@@ -56,6 +56,7 @@ set(CMAKE_MODULE_PATH
 INCLUDE(PlatformSpecific)
 INCLUDE(Configuration)
 INCLUDE(KernelPreprocess)
+INCLUDE(AssembleBinDirs)
 
 # Install CMake modules
 #add_subdirectory(CMake)
