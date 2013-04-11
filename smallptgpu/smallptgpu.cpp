@@ -131,10 +131,18 @@ protected:
 			glDrawPixels(windowWidth, windowHeight, GL_RGB, GL_FLOAT, mergedPixels);
 		}
 
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(0.f, 0.f, 0.f, 0.8f);
+		glRecti(0, windowHeight - 15,
+				windowWidth - 1, windowHeight - 1);
+		glRecti(0, 0, windowWidth - 1, 18);
+		glDisable(GL_BLEND);
+
 		// Title
 		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(4, windowHeight - 16);
-		PrintString(GLUT_BITMAP_HELVETICA_18, windowTitle);
+		glRasterPos2i(4, windowHeight - 10);
+		PrintString(GLUT_BITMAP_8_BY_13, windowTitle.c_str());
 
 		// Caption line 0
 		double globalSampleSec = 0.0;
@@ -148,13 +156,14 @@ protected:
 				globalPass % (globalSampleSec / 1000000.0));
 
 		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(4, 10);
-		PrintString(GLUT_BITMAP_HELVETICA_18, captionString);
+		glRasterPos2i(4, 5);
+		PrintString(GLUT_BITMAP_8_BY_13, captionString.c_str());
 
 		if (printHelp) {
 			glPushMatrix();
 			glLoadIdentity();
-			glOrtho(0.f, 640.f, 0.f, 480.f, -1.0, 1.0);
+			glOrtho(-.5f, windowWidth - .5f,
+				-.5f, windowHeight - .5f, -1.f, 1.f);
 
 			PrintHelp();
 
@@ -176,8 +185,8 @@ protected:
 
 		glViewport(0, 0, windowWidth, windowHeight);
 		glLoadIdentity();
-		glOrtho(0.f, windowWidth - 1.f,
-				0.f, windowHeight - 1.f, -1.f, 1.f);
+		glOrtho(-.5f, windowWidth - .5f,
+				-.5f, windowHeight - .5f, -1.f, 1.f);
 
 		UpdateCamera();
 		UpdateCameraBuffer();
@@ -816,39 +825,46 @@ private:
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glColor4f(0.f, 0.f, 0.5f, 0.5f);
-		glRecti(40, 40, 600, 440);
+		glRecti(50, 50, windowWidth - 50, windowHeight - 50);
 
 		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(320 - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (unsigned char *)"Help & Devices") / 2, 420);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Help & Devices");
+		int fontOffset = windowHeight - 50 - 20;
+		glRasterPos2i((windowWidth - glutBitmapLength(GLUT_BITMAP_9_BY_15, (unsigned char *)"Help & Devices")) / 2, fontOffset);
+		PrintString(GLUT_BITMAP_9_BY_15, "Help & Devices");
 
         // Help
-		glRasterPos2i(60, 390);
-		PrintString(GLUT_BITMAP_9_BY_15, "h - toggle Help");
-		glRasterPos2i(60, 375);
-		PrintString(GLUT_BITMAP_9_BY_15, "arrow Keys - rotate camera left/right/up/down");
-		glRasterPos2i(60, 360);
-		PrintString(GLUT_BITMAP_9_BY_15, "a and d - move camera left and right");
-		glRasterPos2i(60, 345);
-		PrintString(GLUT_BITMAP_9_BY_15, "w and s - move camera forward and backward");
-		glRasterPos2i(60, 330);
-		PrintString(GLUT_BITMAP_9_BY_15, "r and f - move camera up and down");
-		glRasterPos2i(60, 315);
-		PrintString(GLUT_BITMAP_9_BY_15, "PageUp and PageDown - move camera target up and down");
-		glRasterPos2i(60, 300);
-		PrintString(GLUT_BITMAP_9_BY_15, "+ and - - to select next/previous object");
-		glRasterPos2i(60, 285);
-		PrintString(GLUT_BITMAP_9_BY_15, "2, 3, 4, 5, 6, 8, 9 - to move selected object");
+		fontOffset -= 30;
+		PrintHelpString(60, fontOffset, "h", "toggle Help");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "arrow Keys", "rotate camera left/right/up/down");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "a and d", "move camera left and right");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "w and s", "move camera forward and backward");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "r and f", "move camera up and down");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "PageUp and PageDown", "move camera target up and down");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "+ and -", "to select next/previous object");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "2, 3, 4, 5, 6, 8, 9", "to move selected object");
+		fontOffset -= 17;
 
-		// Print device specific informations
-		glRasterPos2i(60, 40 + (selectedDevices.size() + 1) * 15);
-		PrintString(GLUT_BITMAP_9_BY_15, "Devices:");
+		// Print device specific information
+		glColor3f(1.f, .5f, 0.f);
+		int offset = 60;
 		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			const size_t deviceIndex = selectedDevices.size() - i - 1;
 			const std::string deviceString = boost::str(boost::format("  [%s][%.1fM Sample/sec]") %
-				selectedDevices[i].getInfo<CL_DEVICE_NAME>() % (sampleSec[i] / 1000000.0));
-			glRasterPos2i(60, 40 + (i + 1) * 15);
-			PrintString(GLUT_BITMAP_9_BY_15, deviceString);
+				selectedDevices[deviceIndex].getInfo<CL_DEVICE_NAME>() % (sampleSec[deviceIndex] / 1000000.0));
+
+			glRasterPos2i(70, offset);
+			PrintString(GLUT_BITMAP_9_BY_15, deviceString.c_str());
+			offset += 17;
 		}
+		glRasterPos2i(60, offset);
+		PrintString(GLUT_BITMAP_9_BY_15, "Devices:");
 
 		glDisable(GL_BLEND);
 	}

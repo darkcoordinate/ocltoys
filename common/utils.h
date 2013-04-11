@@ -44,7 +44,9 @@ extern std::string OCLErrorString(cl_int error);
 extern std::string OCLLocalMemoryTypeString(cl_device_local_mem_type type);
 extern std::string OCLDeviceTypeString(cl_device_type type);
 
-extern void PrintString(void *font, const std::string &str);
+extern void PrintString(void *font, const char *string);
+extern void PrintHelpString(const unsigned int x, const unsigned int y,
+		const char *key, const char *msg);
 extern std::string ReadSources(const std::string &fileName);
 
 inline double WallClockTime() {

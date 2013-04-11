@@ -158,23 +158,24 @@ std::string OCLDeviceTypeString(cl_device_type type) {
 	}
 }
 
-void PrintString(void *font, const std::string &str) {
-	const char *s = str.c_str();
-	for (size_t i = 0; i < str.length(); i++)
-		glutBitmapCharacter(font, s[i]);
+void PrintString(void *font, const char *string) {
+	unsigned int len = (unsigned int)strlen(string);
+	for (unsigned int i = 0; i < len; i++)
+		glutBitmapCharacter(font, string[i]);
 }
 
-//void PrintHelpString(const u_int x, const u_int y, const char *key, const char *msg) {
-//	glColor3f(0.9f, 0.9f, 0.5f);
-//	glRasterPos2i(x, y);
-//	PrintString(GLUT_BITMAP_8_BY_13, key);
-//
-//	glColor3f(1.f, 1.f, 1.f);
-//	// To update raster color
-//	glRasterPos2i(x + glutBitmapLength(GLUT_BITMAP_8_BY_13, (unsigned char *)key), y);
-//	PrintString(GLUT_BITMAP_8_BY_13, ": ");
-//	PrintString(GLUT_BITMAP_8_BY_13, msg);
-//}
+void PrintHelpString(const unsigned int x, const unsigned int y,
+		const char *key, const char *msg) {
+	glColor3f(0.9f, 0.9f, 0.5f);
+	glRasterPos2i(x, y);
+	PrintString(GLUT_BITMAP_9_BY_15, key);
+
+	glColor3f(1.f, 1.f, 1.f);
+	// To update raster color
+	glRasterPos2i(x + glutBitmapLength(GLUT_BITMAP_9_BY_15, (unsigned char *)key), y);
+	PrintString(GLUT_BITMAP_9_BY_15, ": ");
+	PrintString(GLUT_BITMAP_9_BY_15, msg);
+}
 
 std::string ReadSources(const std::string &fileName) {
 	std::ifstream ifs(fileName.c_str());

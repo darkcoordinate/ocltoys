@@ -154,33 +154,39 @@ protected:
 		glRasterPos2i(0, 0);
 		glDrawPixels(config.width, config.height, GL_RGB, GL_FLOAT, pixels);
 
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glColor4f(0.f, 0.f, 0.f, 0.8f);
+		glRecti(0, windowHeight - 15,
+				windowWidth - 1, windowHeight - 1);
+		glDisable(GL_BLEND);
+
 		// Title
 		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(4, windowHeight - 16);
-		PrintString(GLUT_BITMAP_HELVETICA_18, windowTitle);
+		glRasterPos2i(4, windowHeight - 10);
+		PrintString(GLUT_BITMAP_8_BY_13, windowTitle.c_str());
 
 		// Caption line 0
-		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(4, 10);
-		PrintString(GLUT_BITMAP_HELVETICA_18, captionString);
+		glRasterPos2i(4, 5);
+		PrintString(GLUT_BITMAP_8_BY_13, captionString.c_str());
 
 		// Caption line 1
 		char captionString2[256];
 		sprintf(captionString2, "Shadow/AO %d - SuperSampling %dx%d - Fast rendering (%s)",
 				config.enableShadow, config.superSamplingSize, config.superSamplingSize,
 				config.activateFastRendering ? "active" : "not active");
-		glRasterPos2i(4, 30);
-		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
+		glRasterPos2i(4, 20);
+		PrintString(GLUT_BITMAP_8_BY_13, captionString2);
 		// Caption line 2
 		sprintf(captionString2, "Epsilon %.5f - Max. Iter. %u",
 				config.epsilon, config.maxIterations);
-		glRasterPos2i(4, 50);
-		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
+		glRasterPos2i(4, 35);
+		PrintString(GLUT_BITMAP_8_BY_13, captionString2);
 		// Caption line 3
 		sprintf(captionString2, "Mu = (%.3f, %.3f, %.3f, %.3f)",
 				config.mu[0], config.mu[1], config.mu[2], config.mu[3]);
-		glRasterPos2i(4, 70);
-		PrintString(GLUT_BITMAP_HELVETICA_18, captionString2);
+		glRasterPos2i(4, 50);
+		PrintString(GLUT_BITMAP_8_BY_13, captionString2);
 
 		// Draw Mu constants
 		glEnable(GL_BLEND);
@@ -215,7 +221,8 @@ protected:
 		if (printHelp) {
 			glPushMatrix();
 			glLoadIdentity();
-			glOrtho(0.f, 640.f, 0.f, 480.f, -1.0, 1.0);
+			glOrtho(-.5f, windowWidth - .5f,
+				-.5f, windowHeight - .5f, -1.f, 1.f);
 
 			PrintHelp();
 
@@ -244,8 +251,8 @@ protected:
 
 		glViewport(0, 0, windowWidth, windowHeight);
 		glLoadIdentity();
-		glOrtho(0.f, windowWidth - 1.f,
-				0.f, windowHeight - 1.f, -1.f, 1.f);
+		glOrtho(-.5f, windowWidth - .5f,
+				-.5f, windowHeight - .5f, -1.f, 1.f);
 
 		config.width = windowWidth;
 		config.height = newHeight;
@@ -711,36 +718,37 @@ private:
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glColor4f(0.f, 0.f, 0.5f, 0.5f);
-		glRecti(40, 40, 600, 440);
+		glRecti(50, 50, windowWidth - 50, windowHeight - 50);
 
 		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(300, 420);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Help");
+		int fontOffset = windowHeight - 50 - 20;
+		glRasterPos2i((windowWidth - glutBitmapLength(GLUT_BITMAP_9_BY_15, (unsigned char *)"Help")) / 2, fontOffset);
+		PrintString(GLUT_BITMAP_9_BY_15, "Help");
 
-		glRasterPos2i(60, 390);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "h - toggle Help");
-		glRasterPos2i(60, 360);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "arrow Keys - rotate camera");
-		glRasterPos2i(60, 330);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 0 + Mouse X, Y - rotate camera around the center");
-		glRasterPos2i(60, 300);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Shift + Mouse button 0 + Mouse X, Y - rotate camera");
-		glRasterPos2i(60, 270);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 2 + Mouse X, Y - rotate light");
-		glRasterPos2i(60, 240);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "a, s, d, w - move camera");
-		glRasterPos2i(60, 210);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "1, 2 - decrease, increase epsilon");
-		glRasterPos2i(60, 180);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "3, 4 - decrease, increase max. iterations");
-		glRasterPos2i(60, 150);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "5, 6 - decrease, increase samples per pixel");
-		glRasterPos2i(60, 120);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Mouse button 0 on red rectangles - change Mu values");
-		glRasterPos2i(60, 90);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "l - toggle shadow/AO");
-		glRasterPos2i(60, 60);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "p - save image.ppm");
+		fontOffset -= 30;
+		PrintHelpString(60, fontOffset, "h", "toggle Help");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "arrow Keys", "rotate camera");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "Mouse button 0 + Mouse X, Y", "rotate camera around the center");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "Shift + Mouse button 0 + Mouse X, Y", "rotate camera");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "Mouse button 2 + Mouse X, Y", "rotate light");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "a, s, d, w", "move camera");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "1, 2", "decrease, increase epsilon");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "3, 4", "decrease, increase max. iterations");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "5, 6", "decrease, increase samples per pixel");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "Mouse button 0 on red rectangles", "change Mu values");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "l", "toggle shadow/AO");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "p", "save image.ppm");
 
 		glDisable(GL_BLEND);
 	}
