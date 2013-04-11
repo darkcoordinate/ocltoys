@@ -164,6 +164,18 @@ void PrintString(void *font, const std::string &str) {
 		glutBitmapCharacter(font, s[i]);
 }
 
+//void PrintHelpString(const u_int x, const u_int y, const char *key, const char *msg) {
+//	glColor3f(0.9f, 0.9f, 0.5f);
+//	glRasterPos2i(x, y);
+//	PrintString(GLUT_BITMAP_8_BY_13, key);
+//
+//	glColor3f(1.f, 1.f, 1.f);
+//	// To update raster color
+//	glRasterPos2i(x + glutBitmapLength(GLUT_BITMAP_8_BY_13, (unsigned char *)key), y);
+//	PrintString(GLUT_BITMAP_8_BY_13, ": ");
+//	PrintString(GLUT_BITMAP_8_BY_13, msg);
+//}
+
 std::string ReadSources(const std::string &fileName) {
 	std::ifstream ifs(fileName.c_str());
 	if (!ifs.good())

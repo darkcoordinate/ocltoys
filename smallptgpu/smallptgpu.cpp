@@ -20,7 +20,7 @@
  ***************************************************************************/
 
 #if defined(WIN32)
-// Requires for M_PI
+// Required for M_PI
 #define _USE_MATH_DEFINES
 #endif
 
@@ -452,7 +452,7 @@ private:
 		std::stringstream ss;
 		ss.precision(6);
 		ss << std::scientific <<
-				"-DPARAM_MAX_DEPTH=" << maxDepth << "  "
+				"-DPARAM_MAX_DEPTH=" << maxDepth << " "
 				"-DPARAM_DEFAULT_SIGMA_S=" << defaultVolumeSigmaS << "f "
 				"-DPARAM_DEFAULT_SIGMA_A=" << defaultVolumeSigmaA << "f "
 				"-I. -I../common";
@@ -819,8 +819,8 @@ private:
 		glRecti(40, 40, 600, 440);
 
 		glColor3f(1.f, 1.f, 1.f);
-		glRasterPos2i(300, 420);
-		PrintString(GLUT_BITMAP_HELVETICA_18, "Help");
+		glRasterPos2i(320 - glutBitmapLength(GLUT_BITMAP_HELVETICA_18, (unsigned char *)"Help & Devices") / 2, 420);
+		PrintString(GLUT_BITMAP_HELVETICA_18, "Help & Devices");
 
         // Help
 		glRasterPos2i(60, 390);
@@ -839,6 +839,16 @@ private:
 		PrintString(GLUT_BITMAP_9_BY_15, "+ and - - to select next/previous object");
 		glRasterPos2i(60, 285);
 		PrintString(GLUT_BITMAP_9_BY_15, "2, 3, 4, 5, 6, 8, 9 - to move selected object");
+
+		// Print device specific informations
+		glRasterPos2i(60, 40 + (selectedDevices.size() + 1) * 15);
+		PrintString(GLUT_BITMAP_9_BY_15, "Devices:");
+		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
+			const std::string deviceString = boost::str(boost::format("  [%s][%.1fM Sample/sec]") %
+				selectedDevices[i].getInfo<CL_DEVICE_NAME>() % (sampleSec[i] / 1000000.0));
+			glRasterPos2i(60, 40 + (i + 1) * 15);
+			PrintString(GLUT_BITMAP_9_BY_15, deviceString);
+		}
 
 		glDisable(GL_BLEND);
 	}

@@ -20,7 +20,7 @@
  ***************************************************************************/
 
 #if defined(WIN32)
-// Requires for M_PI
+// Required for M_PI
 #define _USE_MATH_DEFINES
 #endif
 
