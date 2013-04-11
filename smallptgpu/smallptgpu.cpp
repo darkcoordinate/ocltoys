@@ -742,7 +742,7 @@ private:
 	}
 
 	void ResizeFrameBuffer() {
-		const size_t pixelCount = windowWidth * windowHeight;
+		const unsigned int pixelCount = windowWidth * windowHeight;
 
 		unsigned int *seeds = new unsigned int[pixelCount * 2];
 		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
@@ -873,7 +873,7 @@ private:
 		// Very slow !
 		// return powf(x, 1.f / 2.2f);
 
-		const u_int index = std::max(std::min(
+		const unsigned int index = std::max(std::min(
 			static_cast<int>(floorf(GAMMA_TABLE_SIZE * x)),
 			GAMMA_TABLE_SIZE - 1), 0);
 		return gammaTable[index];
