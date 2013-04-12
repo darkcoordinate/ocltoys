@@ -1,3 +1,4 @@
 Authors:
 
-David "Dade" Bucciarelli <dade916.at.gmail.com>
+David "Dade" Bucciarelli <dade916.at.gmail.com> (MandelGPU, JuliaGPU, SmallPTGPU)
+Matias Piispanen (original port of SmallPTGPU to WebCL)
