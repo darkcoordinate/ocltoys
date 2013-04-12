@@ -51,13 +51,13 @@
 				<h1>WebCL SmallPTGPU</h1>
 			</header>
 				<canvas id="canvas" width="640" height="480" style="position:relative; left=0px; width=50%"></canvas>
-				<button type="button" onclick="reset()">Reset</button>
-				<button type="button" id="stop" onclick="stop()">Stop</button>
+				<br><button type="button" id="stop" onclick="startStopChanged()">Stop</button>
 				<p>Resolution: 
 				<select id="resolution" onchange="resolutionChanged(this.selectedIndex)">
 				<option>320x240</option>
 				<option selected="selected">640x480</option>
 				<option>800x600</option>
+				<option>1024x768</option>
 				</select>
 				<p>Scene: 
 				<select id="scene" onchange="sceneChanged(this.options[this.selectedIndex].value)">
@@ -71,7 +71,7 @@
 				<p>Device: 
 				<select id="devices" onchange="deviceChanged(this.selectedIndex)"></select>
 				<p>Console:</p>
-				<div id="console"></div>
+				<div id="console" style="border:1px solid blue;"></div>
 				<h2>Help</h2>
 				Arrow Keys - rotate camera left/right/up/down<br>
 				a and d - move camera left and right<br>

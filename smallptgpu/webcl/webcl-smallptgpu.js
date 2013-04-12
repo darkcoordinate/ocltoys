@@ -60,10 +60,17 @@ var pBuffer;
 
 var clTime = 0;
 var jsTime = 0;
-var elapsedTime = 0;
+var sampleSec = 0;
 var prevTime = 0;
 
 var running = true;
+
+function resetStats() {
+	clTime = 0;
+	jsTime = 0;
+	sampleSec = 0;
+	prevTime = 0;
+}
 
 function xhrLoad(uri) {
 	var xhr = new XMLHttpRequest();
@@ -94,6 +101,8 @@ function webCLSmallPT() {
 	scene.parseScene(sceneSrc);
 	scene.camera.update(canvas.width, canvas.height);
 
+	resetStats();
+
 	if (setupWebCL()) {
 		canvasContent = canvasContext.createImageData(canvas.width, canvas.height);
 
@@ -101,34 +110,40 @@ function webCLSmallPT() {
 		running = true;
 		prevTime = Date.now();
 		requestAnimationFrame(step, canvas);  
-	}
+	} else
+		running = false;
+
+	updateStartStopButton();
 } 
 
 function step(timestamp) {  
 	if(running == true) {
-		jsTime = Date.now() - prevTime - clTime - elapsedTime;
-		prevTime = Date.now();
-		htmlConsole.innerHTML = "WebCL: " + clTime + "ms<br>JS: " + jsTime + "ms";
-		clTime = 0;
-		jsTime = 0;
+		jsTime = jsTime * 0.95 + 0.05 * (Date.now() - prevTime);
+
+		htmlConsole.innerHTML = "WebCL: " + clTime.toFixed(2) + "ms" +
+			"<br>JS: " + jsTime.toFixed(2) + "ms";
 		updateRendering();
+
+		prevTime = Date.now();
 		requestAnimationFrame(step, canvas);  
 	}
 }  
 
-function reInitScene() {
+function updateScene() {
 	kernelIterations = 1;
 	currentSample = 0;
 	currentSphere = 0;
+	resetStats();
 
 	clQueue.enqueueWriteBuffer(clSphereBuffer, true, 0, scene.getSpheresBufferSizeInBytes(),
 		scene.getSpheresBuffer(), []);
 }
 
-function reInit() {
+function updateCamera() {
 	kernelIterations = 1;
 	currentSample = 0;
 	currentSphere = 0;
+	resetStats();
 	
 	scene.getCamera().update(canvas.width, canvas.height);
 
@@ -142,19 +157,19 @@ function drawPixels() {
 	canvasContext.putImageData(canvasContent, 0, 0);
 }
 
-function reset() {
-	reInit();
+function updateStartStopButton() {
+	if(running) {
+		requestAnimationFrame(step, canvas);
+		document.getElementById("stop").innerHTML = "Stop";
+	} else {
+		document.getElementById("stop").innerHTML = "Start";
+	}
 }
 
-function stop() {
-	if(running) {
-		running = false;
-		document.getElementById("stop").innerHTML = "Start";
-	} else {
-		running = true;
-		requestAnimationFrame(step, canvas);  
-		document.getElementById("stop").innerHTML = "Stop";
-	}
+function startStopChanged() {
+	running = (!running);
+
+	updateStartStopButton();
 }
 
 function resolutionChanged(resolution) {
@@ -173,7 +188,7 @@ function resolutionChanged(resolution) {
 
 	freeBuffers();
 	webCLSmallPT();
-	reInit();
+	updateCamera();
 }
 
 function sceneChanged(name) {
@@ -183,7 +198,7 @@ function sceneChanged(name) {
 
 	freeBuffers();
 	webCLSmallPT();
-	reInit();
+	updateCamera();
 }
 
 function keyFunc(event) {
@@ -226,7 +241,7 @@ function keyFunc(event) {
 			t[2] = -t[1] * Math.sin(-ROTATE_STEP) + t[2] * Math.cos(-ROTATE_STEP);
 			vec3.add(t, scene.getCamera().orig, t);
 			scene.getCamera().target = t;
-			reInit();
+			updateCamera();
 			break;
 		case down:
 			var t = vec3.create(scene.getCamera().target);
@@ -235,40 +250,40 @@ function keyFunc(event) {
 			t[2] = -t[1] * Math.sin(ROTATE_STEP) + t[2] * Math.cos(ROTATE_STEP);
 			vec3.add(t, scene.getCamera().orig, t);
 			scene.getCamera().target = t;
-			reInit();
+			updateCamera();
 			break;
 		case left:
 			var t = vec3.create(scene.getCamera().target);
 			vec3.subtract(t, scene.getCamera().orig, t);
-			t[0] = t[0] * Math.cos(-ROTATE_STEP) - t[2] * Math.sin(-ROTATE_STEP);
-			t[2] = t[0] * Math.sin(-ROTATE_STEP) + t[2] * Math.cos(-ROTATE_STEP);
+			t[0] = t[0] * Math.cos(-ROTATE_STEP) - t[2] * Math.sin(ROTATE_STEP);
+			t[2] = t[0] * Math.sin(-ROTATE_STEP) + t[2] * Math.cos(ROTATE_STEP);
 			vec3.add(t, scene.getCamera().orig, t);
 			scene.getCamera().target = t;
-			reInit();
+			updateCamera();
 			break;
 		case right:
 			var t = vec3.create(scene.getCamera().target);
 			vec3.subtract(t, scene.getCamera().orig, t);
-			t[0] = t[0] * Math.cos(ROTATE_STEP) - t[2] * Math.sin(ROTATE_STEP);
-			t[2] = t[0] * Math.sin(ROTATE_STEP) + t[2] * Math.cos(ROTATE_STEP);
+			t[0] = t[0] * Math.cos(ROTATE_STEP) - t[2] * Math.sin(-ROTATE_STEP);
+			t[2] = t[0] * Math.sin(ROTATE_STEP) + t[2] * Math.cos(-ROTATE_STEP);
 			vec3.add(t, scene.getCamera().orig, t);
 			scene.getCamera().target = t;
-			reInit();
+			updateCamera();
 			break;
 		case pgup:
 			scene.getCamera().target[1] += MOVE_STEP;
-			reInit();
+			updateCamera();
 			break;
 		case pgdown:
 			scene.getCamera().target[1] -= MOVE_STEP;
-			reInit();
+			updateCamera();
 			break;
 		case w:
 			var dir = vec3.create(scene.getCamera().dir);
 			vec3.scale(dir, MOVE_STEP);
 			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
 			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
-			reInit();
+			updateCamera();
 			break;
 		case a:
 			var dir = vec3.create(scene.getCamera().x);
@@ -276,14 +291,14 @@ function keyFunc(event) {
 			vec3.scale(dir, -MOVE_STEP);
 			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
 			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
-			reInit();
+			updateCamera();
 			break;
 		case s:
 			var dir = vec3.create(scene.getCamera().dir);
 			vec3.scale(dir, -MOVE_STEP);
 			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
 			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
-			reInit();
+			updateCamera();
 			break;
 			;
 		case d:
@@ -292,55 +307,55 @@ function keyFunc(event) {
 			vec3.scale(dir, MOVE_STEP);
 			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
 			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
-			reInit();
+			updateCamera();
 			break;
 		case r:
 			scene.getCamera().orig[1] += MOVE_STEP;
 			scene.getCamera().target[1] += MOVE_STEP;
-			reInit();
+			updateCamera();
 			break;
 		case f:
 			scene.getCamera().orig[1] -= MOVE_STEP;
 			scene.getCamera().target[1] -= MOVE_STEP;
-			reInit();
+			updateCamera();
 			break;
 		case four:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[0] -= 0.5 * MOVE_STEP;
-			reInitScene(); 
+			UpdateScene(); 
 			break;
 		case six:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[0] += 0.5 * MOVE_STEP;
-			reInitScene(); 
+			UpdateScene(); 
 			break;
 		case eight:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[2] -= 0.5 * MOVE_STEP;
-			reInitScene(); 
+			UpdateScene(); 
 			break;
 		case two:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[2] += 0.5 * MOVE_STEP;
-			reInitScene(); 
+			UpdateScene(); 
 			break;
 		case nine:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[1] += 0.5 * MOVE_STEP;
-			reInitScene(); 
+			UpdateScene(); 
 			break;
 		case three:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[1] -= 0.5 * MOVE_STEP;
-			reInitScene(); 
+			UpdateScene(); 
 			break;
 		case plus:
 			currentSphere = (currentSphere + 1) % scene.spheres.length;
-			reInitScene();
+			UpdateScene();
 			break;
 		case minus:
 			currentSphere = (currentSphere + (scene.spheres.length - 1)) % scene.spheres.length;
-			reInitScene();
+			UpdateScene();
 			break;
 		default:
 			break;
@@ -530,8 +545,6 @@ function executeToneMappingKernel() {
 }
 
 function updateRendering() {
-	htmlConsole.innerHTML = "";
-
 	var t0 = Date.now();
 	for (var i = 0; i < kernelIterations; ++i)
 		executeSmallPTKernel();
@@ -541,7 +554,8 @@ function updateRendering() {
 	clQueue.finish();
 	var t1 = Date.now();
 
-	elapsedTime = t1 - t0;
+	var elapsedTime = t1 -t0;
+	clTime = clTime * 0.95 + 0.05 * elapsedTime;
 	if (elapsedTime < 50)
 		kernelIterations++;
 	else {
@@ -549,20 +563,11 @@ function updateRendering() {
 	}
 
 	var samples = kernelIterations * canvas.height * canvas.width;
-	var sampleSec = samples / elapsedTime;
+	sampleSec =  sampleSec * 0.95 + 0.05 * samples / elapsedTime;
 	
 	htmlConsole.innerHTML += "<br>Pass: " + currentSample +
-		"<br>Rendering time per step: " + elapsedTime + "ms" +
-		"<br>Sample/sec: " + (sampleSec.toFixed(2) / 1000) + "K" +
+		"<br>Sample/sec: " + (sampleSec / 1000.0).toFixed(2) + "M" +
 		"<br>Iterations per step: " + kernelIterations + "\n";
 	
 	drawPixels();
 } 
-
-function reinitScene() {
-	
-}
-
-function reinit(reallocBuffers) {
-	
-}
