@@ -34,29 +34,55 @@ function Sphere() {
 	this.e = vec3.create();
 	
 	this.material = MaterialType.MATTE;
-	this.c = vec3.create();
+	this.c = vec3.create([1.0, 1.0, 1.0]);
 }
 
-Sphere.prototype.setMatte = function(r, p, e, c) {
-  this.rad = r;
-  this.p = p;
-  this.e = e;
+Sphere.prototype.parseSphere = function(sphereDefinition) {
+	var sphereDefinitionArgs = sphereDefinition.split(" ");
+	this.rad = parseFloat(sphereDefinitionArgs[1]);
+	this.p = vec3.create([parseFloat(sphereDefinitionArgs[2]), parseFloat(sphereDefinitionArgs[3]), parseFloat(sphereDefinitionArgs[4])]);
+	this.e = vec3.create([parseFloat(sphereDefinitionArgs[5]), parseFloat(sphereDefinitionArgs[6]), parseFloat(sphereDefinitionArgs[7])]);
+
+	switch (parseInt(sphereDefinitionArgs[8])) {
+		case MaterialType.MATTE:
+			this.setMatte([parseFloat(sphereDefinitionArgs[9]), parseFloat(sphereDefinitionArgs[10]), parseFloat(sphereDefinitionArgs[11])]);
+			break;
+		case MaterialType.MIRROR:
+			this.setMirror([parseFloat(sphereDefinitionArgs[9]), parseFloat(sphereDefinitionArgs[10]), parseFloat(sphereDefinitionArgs[11])]);
+			break;
+		case MaterialType.GLASS:
+			this.setGlass([parseFloat(sphereDefinitionArgs[9]), parseFloat(sphereDefinitionArgs[10]), parseFloat(sphereDefinitionArgs[11])],
+				parseFloat(sphereDefinitionArgs[12]), parseFloat(sphereDefinitionArgs[13]), parseFloat(sphereDefinitionArgs[14]));
+			break;
+		case MaterialType.MATTETRANSLUCENT:
+			this.setMatteTranslucent([parseFloat(sphereDefinitionArgs[9]), parseFloat(sphereDefinitionArgs[10]), parseFloat(sphereDefinitionArgs[11])],
+				parseFloat(sphereDefinitionArgs[12]), parseFloat(sphereDefinitionArgs[13]), parseFloat(sphereDefinitionArgs[14]));
+			break;
+		case MaterialType.GLOSSY:
+			this.setGlossy([parseFloat(sphereDefinitionArgs[9]), parseFloat(sphereDefinitionArgs[10]), parseFloat(sphereDefinitionArgs[11])],
+				parseFloat(sphereDefinitionArgs[12]));
+			break;
+		case MaterialType.GLOSSYTRANSLUCENT:
+			this.setGlossyTranslucent([parseFloat(sphereDefinitionArgs[9]), parseFloat(sphereDefinitionArgs[10]), parseFloat(sphereDefinitionArgs[11])],
+				parseFloat(sphereDefinitionArgs[12]), parseFloat(sphereDefinitionArgs[13]), parseFloat(sphereDefinitionArgs[14]),
+				parseFloat(sphereDefinitionArgs[15]));
+			break;
+		default:
+			alert("Unknown material in Sphere.parseSphere()");
+	}
+};
+
+Sphere.prototype.setMatte = function(c) {
   this.material = MaterialType.MATTE;
   this.c = c;
 };
 
-Sphere.prototype.setMirror = function(r, p, e, c) {
-  this.rad = r;
-  this.p = p;
-  this.e = e;
+Sphere.prototype.setMirror = function(c) {
   this.material = MaterialType.MIRROR;
   this.c = c;
 };
 
-Sphere.prototype.setGlass = function(r, p, e, c, ior, sigmas, sigmaa) {
-  this.rad = r;
-  this.p = p;
-  this.e = e;
+Sphere.prototype.setGlass = function(c, ior, sigmas, sigmaa) {
   this.material = MaterialType.GLASS;
   this.c = c;
   this.ior = ior;
@@ -64,10 +90,7 @@ Sphere.prototype.setGlass = function(r, p, e, c, ior, sigmas, sigmaa) {
   this.sigmaa = sigmaa;
 };
 
-Sphere.prototype.setMatteTranslucent = function(r, p, e, c, transp, sigmas, sigmaa) {
-  this.rad = r;
-  this.p = p;
-  this.e = e;
+Sphere.prototype.setMatteTranslucent = function(c, transp, sigmas, sigmaa) {
   this.material = MaterialType.MATTETRANSLUCENT;
   this.c = c;
   this.transparency = transp;
@@ -75,23 +98,98 @@ Sphere.prototype.setMatteTranslucent = function(r, p, e, c, transp, sigmas, sigm
   this.sigmaa = sigmaa;
 };
 
-Sphere.prototype.setMatteGlossy = function(r, p, e, c, exp) {
-  this.rad = r;
-  this.p = p;
-  this.e = e;
+Sphere.prototype.setGlossy = function(c, exp) {
   this.material = MaterialType.GLOSSY;
   this.c = c;
   this.exponent = exp;
 };
 
-Sphere.prototype.setMatteGlossyTranslucent = function(r, p, e, c, exp, transp, sigmas, sigmaa) {
-  this.rad = r;
-  this.p = p;
-  this.e = e;
+Sphere.prototype.setGlossyTranslucent = function(c, exp, transp, sigmas, sigmaa) {
   this.material = MaterialType.GLOSSYTRANSLUCENT;
   this.c = c;
   this.exponent = exp;
   this.transparency = transp;
   this.sigmas = sigmas;
   this.sigmaa = sigmaa;
+};
+
+Sphere.getSizeInBytes = function() {
+  return 15 * 4;
+};
+
+Sphere.prototype.setBuffer = function(buffer, offset) {
+	var fbuffer = new Float32Array(buffer);
+	var ibuffer = new Int32Array(buffer);
+
+	fbuffer[offset] = this.rad;
+	fbuffer[offset + 1] = this.p[0];
+	fbuffer[offset + 2] = this.p[1];
+	fbuffer[offset + 3] = this.p[2];
+	fbuffer[offset + 4] = this.e[0];
+	fbuffer[offset + 5] = this.e[1];
+	fbuffer[offset + 6] = this.e[2];
+	switch (this.material) {
+		case MaterialType.MATTE:
+			ibuffer[offset + 7] = 0;
+			fbuffer[offset + 8] = this.c[0];
+			fbuffer[offset + 9] = this.c[1];
+			fbuffer[offset + 10] = this.c[2];
+			fbuffer[offset + 11] = 0;
+			fbuffer[offset + 12] = 0;
+			fbuffer[offset + 13] = 0;
+			fbuffer[offset + 14] = 0;
+			break;
+		case MaterialType.MIRROR:
+			ibuffer[offset + 7] = 1;
+			fbuffer[offset + 8] = this.c[0];
+			fbuffer[offset + 9] = this.c[1];
+			fbuffer[offset + 10] = this.c[2];
+			fbuffer[offset + 11] = 0;
+			fbuffer[offset + 12] = 0;
+			fbuffer[offset + 13] = 0;
+			fbuffer[offset + 14] = 0;
+			break;
+		case MaterialType.GLASS:
+			ibuffer[offset + 7] = 2;
+			fbuffer[offset + 8] = this.c[0];
+			fbuffer[offset + 9] = this.c[1];
+			fbuffer[offset + 10] = this.c[2];
+			fbuffer[offset + 11] = this.ior;
+			fbuffer[offset + 12] = this.sigmas;
+			fbuffer[offset + 13] = this.sigmaa;
+			fbuffer[offset + 14] = 0;
+			break;
+		case MaterialType.MATTETRANSLUCENT:
+			ibuffer[offset + 7] = 3;
+			fbuffer[offset + 8] = this.c[0];
+			fbuffer[offset + 9] = this.c[1];
+			fbuffer[offset + 10] = this.c[2];
+			fbuffer[offset + 11] = this.transparency;
+			fbuffer[offset + 12] = this.sigmas;
+			fbuffer[offset + 13] = this.sigmaa;
+			fbuffer[offset + 14] = 0;
+			break;
+		case MaterialType.GLOSSY:
+			ibuffer[offset + 7] = 4;
+			fbuffer[offset + 8] = this.c[0];
+			fbuffer[offset + 9] = this.c[1];
+			fbuffer[offset + 10] = this.c[2];
+			fbuffer[offset + 11] = this.exponent;
+			fbuffer[offset + 12] = 0;
+			fbuffer[offset + 13] = 0;
+			fbuffer[offset + 14] = 0;
+			break;
+		case MaterialType.GLOSSYTRANSLUCENT:
+			ibuffer[offset + 7] = 5;
+			fbuffer[offset + 8] = this.c[0];
+			fbuffer[offset + 9] = this.c[1];
+			fbuffer[offset + 10] = this.c[2];
+			fbuffer[offset + 11] = this.exponent;
+			fbuffer[offset + 12] = this.transparency;
+			fbuffer[offset + 13] = this.sigmas;
+			fbuffer[offset + 14] = this.sigmaa;
+			break;
+		default:
+			alert("Unknown material in Sphere.setBuffer()");
+	}
 };

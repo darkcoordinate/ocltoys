@@ -22,56 +22,68 @@
 // This code is based on the original Matias Piispanen's port of
 // SmallPTGPU to WebCL
 
-var WALL_RAD = 10000;
-
-function Scene(spheres) {
+function Scene() {
+	this.camera = new Camera();
 	this.spheres = [];
-	if(spheres == undefined) {
-		this.spheres[0] = new Sphere();
-		this.spheres[0].setMatte(WALL_RAD, [WALL_RAD + 1.0, 40.8, 81.6], [0.0, 0.0, 0.0], [0.75, 0.25, 0.25]);
-		this.spheres[1] = new Sphere();
-		this.spheres[1].setMatte(WALL_RAD, [-WALL_RAD + 99.0, 40.8, 81.6], [0.0, 0.0, 0.0], [0.25, 0.25, 0.25]);
-		this.spheres[2] = new Sphere();
-		this.spheres[2].setMatte(WALL_RAD, [50.0, 40.8, WALL_RAD], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75]);
-		this.spheres[3] = new Sphere();
-		this.spheres[3].setMatte(WALL_RAD, [50.0, 40.8, -WALL_RAD + 270.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]);
-		this.spheres[4] = new Sphere();
-		this.spheres[4].setMatte(WALL_RAD, [50.0, WALL_RAD, 81.6], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75]);
-		this.spheres[5] = new Sphere();
-		this.spheres[5].setMatte(WALL_RAD, [50.0, -WALL_RAD + 81.6, 81.6], [0.0, 0.0, 0.0], [0.75, 0.75, 0.75]);
-		this.spheres[6] = new Sphere();
-		this.spheres[6].setMatte(7.0, [50.0, 81.6 - 15.0, 81.6], [12.0, 12.0, 12.0], [0.0, 0.0, 0.0]);
-	}
+	this.defaultMaxDepth = 6;
+	this.defaultSigmaS = 0.0;
+	this.defaultSigmaA = 0.0;
 }
+
+Scene.prototype.getCamera = function() {
+	return this.camera;
+};
 
 Scene.prototype.getSpheres = function() {
 	return this.spheres;
-}
+};
 
 Scene.prototype.getSphereCount = function() {
 	return this.spheres.length;
-}
+};
 
-Scene.prototype.getBuffer = function() {
-	var buffer = new Float32Array(this.spheres.length * 15);
-	
+Scene.prototype.getSpheresBuffer = function() {
+	buffer = new ArrayBuffer(Sphere.getSizeInBytes() * this.spheres.length);
+
+	var size = Sphere.getSizeInBytes() / 4;
 	for(var i = 0; i < this.spheres.length; i++) {
-		buffer[i * 15] = this.spheres[i].rad;
-		buffer[i * 15 + 1] = this.spheres[i].p[0];
-		buffer[i * 15 + 2] = this.spheres[i].p[1];
-		buffer[i * 15 + 3] = this.spheres[i].p[2];
-		buffer[i * 15 + 4] = this.spheres[i].e[0];
-		buffer[i * 15 + 5] = this.spheres[i].e[1];
-		buffer[i * 15 + 6] = this.spheres[i].e[2];
-		buffer[i * 15 + 7] = this.spheres[i].material;
-		buffer[i * 15 + 8] = this.spheres[i].c[0];
-		buffer[i * 15 + 9] = this.spheres[i].c[1];
-		buffer[i * 15 + 10] = this.spheres[i].c[2];
-		buffer[i * 15 + 11] = 0;
-		buffer[i * 15 + 12] = 0;
-		buffer[i * 15 + 13] = 0;
-		buffer[i * 15 + 14] = 0;
+		var offset = size * i;
+		this.spheres[i].setBuffer(buffer, offset);
 	}
 
-	return buffer;
-}
+	return new Float32Array(buffer);
+};
+
+Scene.prototype.getSpheresBufferSizeInBytes = function() {
+	return this.spheres.length * Sphere.getSizeInBytes();
+};
+
+Scene.prototype.parseScene = function(sceneStr) {
+	var lines = lines = sceneStr.split(/\r\n|\r|\n/);
+
+	// Parse camera
+	var cameraArgs = lines[0].split(" ");
+	this.camera.orig = vec3.create([parseFloat(cameraArgs[1]), parseFloat(cameraArgs[2]), parseFloat(cameraArgs[3])]);
+	this.camera.target = vec3.create([parseFloat(cameraArgs[4]), parseFloat(cameraArgs[5]), parseFloat(cameraArgs[6])]);
+
+	// Parse max. path depth
+	var maxDepthArgs = lines[1].split(" ");
+	this.defaultMaxDepth = parseInt(maxDepthArgs[1]);
+	// Parse defualt sigma s
+	var defaultSigmaSArgs = lines[2].split(" ");
+	this.defaultSigmaS = parseFloat(defaultSigmaSArgs[1]);
+	// Parse defualt sigma a
+	var defaultSigmaAArgs = lines[3].split(" ");
+	this.defaultSigmaA = parseFloat(defaultSigmaAArgs[1]);
+
+	// Parse sphere count
+	var sphereCountArgs = lines[4].split(" ");
+	var sphereCount = parseInt(sphereCountArgs[1]);
+	var currentLine = 5;
+	this.spheres = [];
+	for (var i = 0; i < sphereCount; ++i) {
+		var sphere = new Sphere();
+		sphere.parseSphere(lines[currentLine++]);
+		this.spheres.push(sphere);
+	}
+};

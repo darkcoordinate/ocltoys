@@ -33,6 +33,21 @@ function Camera() {
 	this.y = vec3.create();
 }
 
+Camera.prototype.update = function(width, height) {
+	vec3.subtract(this.target, this.orig, this.dir);
+	vec3.normalize(this.dir);
+
+	var up = vec3.create([0.0, 1.0, 0.0]);
+	var fov = (M_PI / 180.0) * 45.0;
+	vec3.cross(this.dir, up, this.x);
+	vec3.normalize(this.x);
+	vec3.scale(this.x, width * fov / height, this.x);
+	
+	vec3.cross(this.x, this.dir, this.y);
+	vec3.normalize(this.y);
+	vec3.scale(this.y, fov, this.y);
+};
+
 Camera.prototype.getBuffer = function() {
 	var buffer = new Float32Array(15);
 
@@ -57,4 +72,8 @@ Camera.prototype.getBuffer = function() {
 	buffer[14] = this.y[2];
 
 	return buffer;
-}
+};
+
+Camera.prototype.getBufferSizeInBytes = function() {
+	return 15 * 4;
+};

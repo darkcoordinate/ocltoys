@@ -29,6 +29,7 @@ var selected = 0;
 var selectedPlatform;
 var canvas;
 var canvasContext;
+
 var cl;
 var clQueue;
 var clSrc;
@@ -37,22 +38,20 @@ var clKernelsSmallPT;
 var workGroupSizeSmallPT;
 var clKernelsToneMapping;
 var workGroupSizeToneMapping;
-
-var sphereCount;
-var pixelCount;
+var kernelIterations = 1;
 var currentSample = 0;
-var testarray;
-var htmlConsole;
-var spheres = [];
-var currentSphere = 0;
-var camera;
-var scene;
 
-var sphereBuffer;
-var cameraBuffer;
-var pixelBuffer;
-var colorBuffer;
-var seedBuffer;
+var clSphereBuffer;
+var clCameraBuffer;
+var clPixelsBuffer;
+var clColorBuffer;
+var clSeedBuffer;
+
+var pixelCount;
+var htmlConsole;
+var currentSphere = 0;
+var sceneName = "cornell.scn";
+var scene;
 
 var pixels;
 var canvasContent;
@@ -61,7 +60,6 @@ var pBuffer;
 
 var clTime = 0;
 var jsTime = 0;
-var clMemTime = 0;
 var elapsedTime = 0;
 var prevTime = 0;
 
@@ -85,72 +83,57 @@ requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimati
 
 var start = window.mozAnimationStartTime;  // Only supported in FF. Other browsers can use something like Date.now(). 
 
-function webclsmallpt() {
+function webCLSmallPT() {
 	htmlConsole = document.getElementById("console");
 	canvas = document.getElementById("canvas");
 	canvasContext = canvas.getContext("2d");
   
+	var sceneSrc = xhrLoad("scenes/" + sceneName);
+
 	scene = new Scene();
-	spheres = scene.getBuffer();
-	camera = new Camera();
-	
-	camera.orig.set([50.0, 45.0, 205.6]);
-	camera.target.set([50.0, 45.0 - 0.042612, 204.6]);
-	
-	updateCamera();
-  
-	setupWebCL();
-	canvasContent = canvasContext.createImageData(canvas.width, canvas.height);
-	
-	updateRendering();
-	running = true;
-	prevTime = Date.now();
-	requestAnimationFrame(step, canvas);  
+	scene.parseScene(sceneSrc);
+	scene.camera.update(canvas.width, canvas.height);
+
+	if (setupWebCL()) {
+		canvasContent = canvasContext.createImageData(canvas.width, canvas.height);
+
+		updateRendering();
+		running = true;
+		prevTime = Date.now();
+		requestAnimationFrame(step, canvas);  
+	}
 } 
 
 function step(timestamp) {  
 	if(running == true) {
-		jsTime = Date.now() - prevTime - clTime - clMemTime - elapsedTime;
+		jsTime = Date.now() - prevTime - clTime - elapsedTime;
 		prevTime = Date.now();
-		htmlConsole.innerHTML = "WebCL (ms): " + clTime + "<br>WebCL memory transfer (ms): " + clMemTime + "<br>JS (ms): " + jsTime;
+		htmlConsole.innerHTML = "WebCL: " + clTime + "ms<br>JS: " + jsTime + "ms";
 		clTime = 0;
 		jsTime = 0;
-		clMemTime = 0;
 		updateRendering();
 		requestAnimationFrame(step, canvas);  
 	}
 }  
 
-function updateCamera() {
-	vec3.subtract(camera.target, camera.orig, camera.dir);
-	vec3.normalize(camera.dir);
-
-	//NOTE: changed up direction from 1.0 to -1.0
-	var up = vec3.create([0.0, -1.0, 0.0]);
-	var fov = (M_PI / 180.0) * 45.0;
-	vec3.cross(camera.dir, up, camera.x);
-	vec3.normalize(camera.x);
-	vec3.scale(camera.x, canvas.width * fov / canvas.height, camera.x);
-	
-	vec3.cross(camera.x, camera.dir, camera.y);
-	vec3.normalize(camera.y);
-	vec3.scale(camera.y, fov, camera.y);
-}
-
 function reInitScene() {
+	kernelIterations = 1;
 	currentSample = 0;
-	
-	var bufSize = 11 * 4 * sphereCount;
-	clQueue.enqueueWriteBuffer(sphereBuffer, true, 0, bufSize, scene.getBuffer(), []);
+	currentSphere = 0;
+
+	clQueue.enqueueWriteBuffer(clSphereBuffer, true, 0, scene.getSpheresBufferSizeInBytes(),
+		scene.getSpheresBuffer(), []);
 }
 
 function reInit() {
+	kernelIterations = 1;
 	currentSample = 0;
+	currentSphere = 0;
 	
-	updateCamera();
-	
-	var bufSize = 15 * 4;
-	clQueue.enqueueWriteBuffer(cameraBuffer, true, 0, bufSize, camera.getBuffer(), []);
+	scene.getCamera().update(canvas.width, canvas.height);
+
+	clQueue.enqueueWriteBuffer(clCameraBuffer, true, 0, scene.getCamera().getBufferSizeInBytes(),
+		scene.getCamera().getBuffer(), []);
 }
 
 function drawPixels() {
@@ -167,8 +150,7 @@ function stop() {
 	if(running) {
 		running = false;
 		document.getElementById("stop").innerHTML = "Start";
-	}
-	else {
+	} else {
 		running = true;
 		requestAnimationFrame(step, canvas);  
 		document.getElementById("stop").innerHTML = "Stop";
@@ -181,18 +163,26 @@ function resolutionChanged(resolution) {
 	if(resolution == 0) {
 		canvas.width = 320;
 		canvas.height = 240;
-	}
-	else if(resolution == 1) {
+	} else if(resolution == 1) {
 		canvas.width = 640;
 		canvas.height = 480;
-	}
-	else if(resolution == 2) {
+	} else if(resolution == 2) {
 		canvas.width = 800;
 		canvas.height = 600;
 	}
-	
+
 	freeBuffers();
-	webclsmallpt();
+	webCLSmallPT();
+	reInit();
+}
+
+function sceneChanged(name) {
+	running = false;
+
+	sceneName = name;
+
+	freeBuffers();
+	webCLSmallPT();
 	reInit();
 }
 
@@ -230,88 +220,88 @@ function keyFunc(event) {
 	
 	switch(key) {
 		case up:
-			var t = vec3.create(camera.target);
-			vec3.subtract(t, camera.orig, t);
+			var t = vec3.create(scene.getCamera().target);
+			vec3.subtract(t, scene.getCamera().orig, t);
 			t[1] = t[1] * Math.cos(-ROTATE_STEP) + t[2] * Math.sin(-ROTATE_STEP);
 			t[2] = -t[1] * Math.sin(-ROTATE_STEP) + t[2] * Math.cos(-ROTATE_STEP);
-			vec3.add(t, camera.orig, t);
-			camera.target = t;
+			vec3.add(t, scene.getCamera().orig, t);
+			scene.getCamera().target = t;
 			reInit();
 			break;
 		case down:
-			var t = vec3.create(camera.target);
-			vec3.subtract(t, camera.orig, t);
+			var t = vec3.create(scene.getCamera().target);
+			vec3.subtract(t, scene.getCamera().orig, t);
 			t[1] = t[1] * Math.cos(ROTATE_STEP) + t[2] * Math.sin(ROTATE_STEP);
 			t[2] = -t[1] * Math.sin(ROTATE_STEP) + t[2] * Math.cos(ROTATE_STEP);
-			vec3.add(t, camera.orig, t);
-			camera.target = t;
+			vec3.add(t, scene.getCamera().orig, t);
+			scene.getCamera().target = t;
 			reInit();
 			break;
 		case left:
-			var t = vec3.create(camera.target);
-			vec3.subtract(t, camera.orig, t);
+			var t = vec3.create(scene.getCamera().target);
+			vec3.subtract(t, scene.getCamera().orig, t);
 			t[0] = t[0] * Math.cos(-ROTATE_STEP) - t[2] * Math.sin(-ROTATE_STEP);
 			t[2] = t[0] * Math.sin(-ROTATE_STEP) + t[2] * Math.cos(-ROTATE_STEP);
-			vec3.add(t, camera.orig, t);
-			camera.target = t;
+			vec3.add(t, scene.getCamera().orig, t);
+			scene.getCamera().target = t;
 			reInit();
 			break;
 		case right:
-			var t = vec3.create(camera.target);
-			vec3.subtract(t, camera.orig, t);
+			var t = vec3.create(scene.getCamera().target);
+			vec3.subtract(t, scene.getCamera().orig, t);
 			t[0] = t[0] * Math.cos(ROTATE_STEP) - t[2] * Math.sin(ROTATE_STEP);
 			t[2] = t[0] * Math.sin(ROTATE_STEP) + t[2] * Math.cos(ROTATE_STEP);
-			vec3.add(t, camera.orig, t);
-			camera.target = t;
+			vec3.add(t, scene.getCamera().orig, t);
+			scene.getCamera().target = t;
 			reInit();
 			break;
 		case pgup:
-			camera.target[1] += MOVE_STEP;
+			scene.getCamera().target[1] += MOVE_STEP;
 			reInit();
 			break;
 		case pgdown:
-			camera.target[1] -= MOVE_STEP;
+			scene.getCamera().target[1] -= MOVE_STEP;
 			reInit();
 			break;
 		case w:
-			var dir = vec3.create(camera.dir);
+			var dir = vec3.create(scene.getCamera().dir);
 			vec3.scale(dir, MOVE_STEP);
-			vec3.add(camera.orig, dir, camera.orig);
-			vec3.add(camera.target, dir, camera.target);
+			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
+			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
 			reInit();
 			break;
 		case a:
-			var dir = vec3.create(camera.x);
+			var dir = vec3.create(scene.getCamera().x);
 			vec3.normalize(dir);
 			vec3.scale(dir, -MOVE_STEP);
-			vec3.add(camera.orig, dir, camera.orig);
-			vec3.add(camera.target, dir, camera.target);
+			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
+			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
 			reInit();
 			break;
 		case s:
-			var dir = vec3.create(camera.dir);
+			var dir = vec3.create(scene.getCamera().dir);
 			vec3.scale(dir, -MOVE_STEP);
-			vec3.add(camera.orig, dir, camera.orig);
-			vec3.add(camera.target, dir, camera.target);
+			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
+			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
 			reInit();
 			break;
 			;
 		case d:
-			var dir = vec3.create(camera.x);
+			var dir = vec3.create(scene.getCamera().x);
 			vec3.normalize(dir);
 			vec3.scale(dir, MOVE_STEP);
-			vec3.add(camera.orig, dir, camera.orig);
-			vec3.add(camera.target, dir, camera.target);
+			vec3.add(scene.getCamera().orig, dir, scene.getCamera().orig);
+			vec3.add(scene.getCamera().target, dir, scene.getCamera().target);
 			reInit();
 			break;
 		case r:
-			camera.orig[1] += MOVE_STEP;
-			camera.target[1] += MOVE_STEP;
+			scene.getCamera().orig[1] += MOVE_STEP;
+			scene.getCamera().target[1] += MOVE_STEP;
 			reInit();
 			break;
 		case f:
-			camera.orig[1] -= MOVE_STEP;
-			camera.target[1] -= MOVE_STEP;
+			scene.getCamera().orig[1] -= MOVE_STEP;
+			scene.getCamera().target[1] -= MOVE_STEP;
 			reInit();
 			break;
 		case four:
@@ -345,11 +335,11 @@ function keyFunc(event) {
 			reInitScene(); 
 			break;
 		case plus:
-			currentSphere = (currentSphere + 1) % sphereCount;
+			currentSphere = (currentSphere + 1) % scene.spheres.length;
 			reInitScene();
 			break;
 		case minus:
-			currentSphere = (currentSphere + (sphereCount - 1)) % sphereCount;
+			currentSphere = (currentSphere + (scene.spheres.length - 1)) % scene.spheres.length;
 			reInitScene();
 			break;
 		default:
@@ -359,42 +349,37 @@ function keyFunc(event) {
 
 function deviceChanged(device) {
 	running = false;
+
+	kernelIterations = 1;
 	currentSample = 0;
 	freeBuffers();
-	
+
 	selected = device;
 	
-	webclsmallpt();
+	webCLSmallPT();
 }
 
 function freeBuffers() {
-	sphereBuffer.releaseCLResources();
-	cameraBuffer.releaseCLResources();
-	pixelBuffer.releaseCLResources();
-	colorBuffer.releaseCLResources();
-	seedBuffer.releaseCLResources();
-	
+	clSphereBuffer.releaseCLResources();
+	clCameraBuffer.releaseCLResources();
+	clPixelsBuffer.releaseCLResources();
+	clColorBuffer.releaseCLResources();
+	clSeedBuffer.releaseCLResources();
+
 	clQueue.releaseCLResources();
 	clProgram.releaseCLResources();
 	clKernelsSmallPT.releaseCLResources();
-	clKernelstoneMapping.releaseCLResources();
+	clKernelsToneMapping.releaseCLResources();
 	cl.releaseCLResources();
 }
 
 function allocateBuffers() {
-	// "sizeof(Sphere)"
-	sphereCount = scene.getSphereCount();
-	var bufSize = 15 * 4 * sphereCount;
-	sphereBuffer = cl.createBuffer(WebCL.CL_MEM_READ_ONLY, bufSize);
+	clSphereBuffer = cl.createBuffer(WebCL.CL_MEM_READ_ONLY, scene.getSpheresBufferSizeInBytes());
+	clQueue.enqueueWriteBuffer(clSphereBuffer, true, 0, scene.getSpheresBufferSizeInBytes(), scene.getSpheresBuffer(), []);
 	
-	clQueue.enqueueWriteBuffer(sphereBuffer, true, 0, bufSize, spheres, []);
-	
-	//"sizeof(Camera)"
-	bufSize = 15 * 4;
-	cameraBuffer = cl.createBuffer(WebCL.CL_MEM_READ_ONLY, bufSize);
-	
-	clQueue.enqueueWriteBuffer(cameraBuffer, true, 0, bufSize, camera.getBuffer(), []);
-	
+	clCameraBuffer = cl.createBuffer(WebCL.CL_MEM_READ_ONLY, scene.getCamera().getBufferSizeInBytes());
+	clQueue.enqueueWriteBuffer(clCameraBuffer, true, 0, scene.getCamera().getBufferSizeInBytes(), scene.getCamera().getBuffer(), []);
+
 	pixelCount = canvas.width * canvas.height;
 	pBuffer = new ArrayBuffer(4 * pixelCount);
 	pixelArray = new Int32Array(pBuffer);
@@ -412,17 +397,11 @@ function allocateBuffers() {
 			seeds[i] = 2;
 		}
 	}
-	
-	bufSize = 3 * 4 * pixelCount;
-	colorBuffer = cl.createBuffer(WebCL.CL_MEM_READ_WRITE, bufSize);
-	
-	bufSize = 4 * pixelCount;
-	pixelBuffer = cl.createBuffer(WebCL.CL_MEM_WRITE_ONLY, bufSize);
-	
-	bufSize = 4 * pixelCount * 2;
-	seedBuffer = cl.createBuffer(WebCL.CL_MEM_READ_WRITE, bufSize);
-	
-	clQueue.enqueueWriteBuffer(seedBuffer, true, 0, bufSize, seeds, []);
+
+	clColorBuffer = cl.createBuffer(WebCL.CL_MEM_READ_WRITE, 3 * 4 * pixelCount);
+	clPixelsBuffer = cl.createBuffer(WebCL.CL_MEM_WRITE_ONLY, 4 * pixelCount);
+	clSeedBuffer = cl.createBuffer(WebCL.CL_MEM_READ_WRITE, 4 * pixelCount * 2);	
+	clQueue.enqueueWriteBuffer(clSeedBuffer, true, 0, 4 * pixelCount * 2, seeds, []);
 }
 
 function clDeviceQuery() {
@@ -450,7 +429,6 @@ function clDeviceQuery() {
 }
 
 function setupWebCL() {
-
 	var deviceList = clDeviceQuery();
 
 	if (deviceList.length === 0) {
@@ -472,23 +450,34 @@ function setupWebCL() {
 		var selectedPlatform = deviceList[selected].platform;
 		cl = WebCL.createContext([WebCL.CL_CONTEXT_PLATFORM, selectedPlatform], [selectedDevice]);
 		clQueue = cl.createCommandQueue(selectedDevice, null);
-		allocateBuffers();
 	} catch(err) {
-		alert("Error initializing WebCL");
+		alert("Error initializing WebCL: " + err);
+		console.log(err);
+		return false;
 	}
+
+	allocateBuffers();
 
 	try {
 		clSrc = xhrLoad("preprocessed_rendering_kernel.cl");
 		//console.log(clSrc);
 		clProgram = cl.createProgramWithSource(clSrc);
-		clProgram.buildProgram([selectedDevice], "-DPARAM_MAX_DEPTH=6 -DPARAM_DEFAULT_SIGMA_S=0.f -DPARAM_DEFAULT_SIGMA_A=0.f");
+
+		var opts ="-DPARAM_MAX_DEPTH=" + scene.defaultMaxDepth +
+			" -DPARAM_DEFAULT_SIGMA_S=" + scene.defaultSigmaS +
+			" -DPARAM_DEFAULT_SIGMA_A=" + scene.defaultSigmaA;
+		console.log("Kernel options: " + opts);
+
+		clProgram.buildProgram([selectedDevice],opts);		
 		var buildLog = clProgram.getProgramBuildInfo(selectedDevice, WebCL.CL_PROGRAM_BUILD_LOG);
 		console.log("Kernel build log: ");
 		console.log(buildLog);
-	} catch(e) {
-		alert("Failed to build WebCL program. Error " + 
+	} catch(err) {
+		alert("Failed to build WebCL program: " + err + "\nError " + 
 			clProgram.getProgramBuildInfo(selectedDevice, WebCL.CL_PROGRAM_BUILD_STATUS) + ":  " + 
 			clProgram.getProgramBuildInfo(selectedDevice, WebCL.CL_PROGRAM_BUILD_LOG));
+		console.log(err);
+		return false;
 	}
 	
 	clKernelsSmallPT = clProgram.createKernel("SmallPTGPU");
@@ -496,76 +485,76 @@ function setupWebCL() {
 
 	clKernelsToneMapping = clProgram.createKernel("WebCLToneMapping");
 	workGroupSizeToneMapping = clKernelsToneMapping.getKernelWorkGroupInfo(selectedDevice, WebCL.CL_KERNEL_WORK_GROUP_SIZE);
+
+	return true;
 }
 
-function executeKernel() {
+function executeSmallPTKernel() {
 	var globalThreadsSmallPT = canvas.width * canvas.height;	
 	if(globalThreadsSmallPT % workGroupSizeSmallPT !== 0) {
 		globalThreadsSmallPT = (Math.floor(globalThreads / workGroupSizeSmallPT) + 1) * workGroupSizeSmallPT;
 	}
 
+	clKernelsSmallPT.setKernelArg(0, clColorBuffer);
+	clKernelsSmallPT.setKernelArg(1, clSeedBuffer);
+	clKernelsSmallPT.setKernelArg(2, clCameraBuffer);
+	clKernelsSmallPT.setKernelArg(3, scene.spheres.length, WebCL.types.UINT);
+	clKernelsSmallPT.setKernelArg(4, clSphereBuffer);
+	clKernelsSmallPT.setKernelArg(5, canvas.width, WebCL.types.INT);
+	clKernelsSmallPT.setKernelArg(6, canvas.height, WebCL.types.INT);
+	clKernelsSmallPT.setKernelArg(7, currentSample++, WebCL.types.INT);
+
+	try {
+		clQueue.enqueueNDRangeKernel(clKernelsSmallPT, 1, [], [globalThreadsSmallPT], [workGroupSizeSmallPT], []);
+	} catch(err) {
+		htmlConsole.innerHTML += "<br>SmallPT kernel execution error: <code>" + err + "</code><br>";
+	}
+}
+
+function executeToneMappingKernel() {
 	var globalThreadsToneMapping = canvas.width * canvas.height;	
 	if(globalThreadsToneMapping % workGroupSizeToneMapping !== 0) {
 		globalThreadsToneMapping = (Math.floor(globalThreadsToneMapping / workGroupSizeToneMapping) + 1) * workGroupSizeToneMapping;
 	}
-	
-	clKernelsSmallPT.setKernelArg(0, colorBuffer);
-	clKernelsSmallPT.setKernelArg(1, seedBuffer);
-	clKernelsSmallPT.setKernelArg(2, cameraBuffer);
-	clKernelsSmallPT.setKernelArg(3, sphereCount, WebCL.types.UINT);
-	clKernelsSmallPT.setKernelArg(4, sphereBuffer);
-	clKernelsSmallPT.setKernelArg(5, canvas.width, WebCL.types.INT);
-	clKernelsSmallPT.setKernelArg(6, canvas.height, WebCL.types.INT);
-	clKernelsSmallPT.setKernelArg(7, currentSample, WebCL.types.INT);
 
-	clKernelsToneMapping.setKernelArg(0, colorBuffer);
-	clKernelsToneMapping.setKernelArg(1, pixelBuffer);
+	clKernelsToneMapping.setKernelArg(0, clColorBuffer);
+	clKernelsToneMapping.setKernelArg(1, clPixelsBuffer);
 	clKernelsToneMapping.setKernelArg(2, canvas.width, WebCL.types.INT);
 	clKernelsToneMapping.setKernelArg(3, canvas.height, WebCL.types.INT);
 
 	try {
-		var start = Date.now();
-		clQueue.enqueueNDRangeKernel(clKernelsSmallPT, 1, [], [globalThreadsSmallPT], [workGroupSizeSmallPT], []);
 		clQueue.enqueueNDRangeKernel(clKernelsToneMapping, 1, [], [globalThreadsToneMapping], [workGroupSizeToneMapping], []);
-		clQueue.finish();
-		clTime += Date.now() - start;
-	} catch(e) {
-		htmlConsole.innerHTML = "<code>" + e + "</code><p/>";
+	} catch(err) {
+		htmlConsole.innerHTML += "<br>Tone Mpping kernel execution error: <code>" + err + "</code><br>";
 	}
 }
 
 function updateRendering() {
-	var startTime = Date.now();
-	var startSampleCount = currentSample;
-	
-	if(currentSample < 20) {
-		executeKernel();
-		currentSample += 1;
-	} else {
-		var k = Math.min(currentSample - 20, 100) / 100.0;
-		var thresholdTime = 0.5 * k;
-		
-		for(;;) {
-			executeKernel();
-			clQueue.finish();
-			currentSample += 1;
-			
-			var elapsedTime = Date.now() - startTime;
-			if(elapsedTime > thresholdTime) {
-				break;
-			}
-		}
+	htmlConsole.innerHTML = "";
+
+	var t0 = Date.now();
+	for (var i = 0; i < kernelIterations; ++i)
+		executeSmallPTKernel();
+
+	executeToneMappingKernel();
+	clQueue.enqueueReadBuffer(clPixelsBuffer, false, 0, 4 * pixelCount, pixelArray, []);
+	clQueue.finish();
+	var t1 = Date.now();
+
+	elapsedTime = t1 - t0;
+	if (elapsedTime < 50)
+		kernelIterations++;
+	else {
+		kernelIterations = Math.max(--kernelIterations, 1);
 	}
 
-	var start = Date.now();
-	clQueue.enqueueReadBuffer(pixelBuffer, true, 0, 4 * pixelCount, pixelArray, []);
-	clMemTime += Date.now() - start;
+	var samples = kernelIterations * canvas.height * canvas.width;
+	var sampleSec = samples / elapsedTime;
 	
-	elapsedTime = Date.now() - startTime;
-	var samples = currentSample - startSampleCount;
-	var sampleSec = samples * canvas.height * canvas.width / elapsedTime;
-	
-	htmlConsole.innerHTML += "<br>Rendering time " + elapsedTime + " ms (pass " + currentSample + ")<br>Sample/sec " + sampleSec.toFixed(2) + "K\n";
+	htmlConsole.innerHTML += "<br>Pass: " + currentSample +
+		"<br>Rendering time per step: " + elapsedTime + "ms" +
+		"<br>Sample/sec: " + (sampleSec.toFixed(2) / 1000) + "K" +
+		"<br>Iterations per step: " + kernelIterations + "\n";
 	
 	drawPixels();
 } 

@@ -582,7 +582,10 @@ __kernel void WebCLToneMapping(
   return;
 
  __global Vec *sample = &samples[gid];
- __global int *pixel = &pixels[gid];
+
+ const unsigned int x = gid % width;
+ const unsigned int y = height - gid / width - 1;
+ __global int *pixel = &pixels[x + y * width];
  const float r = (pow(clamp(sample->x, 0.f, 1.f), 1.f / 2.2f));
  const float g = (pow(clamp(sample->y, 0.f, 1.f), 1.f / 2.2f));
  const float b = (pow(clamp(sample->z, 0.f, 1.f), 1.f / 2.2f));
