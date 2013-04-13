@@ -61,7 +61,7 @@ var pBuffer;
 var clTime = 0;
 var jsTime = 0;
 var sampleSec = 0;
-var prevTime = 0;
+var prevTime = Date.now();
 
 var running = true;
 
@@ -69,7 +69,7 @@ function resetStats() {
 	clTime = 0;
 	jsTime = 0;
 	sampleSec = 0;
-	prevTime = 0;
+	prevTime = Date.now();
 }
 
 function xhrLoad(uri) {
@@ -108,7 +108,6 @@ function webCLSmallPT() {
 
 		updateRendering();
 		running = true;
-		prevTime = Date.now();
 		requestAnimationFrame(step, canvas);  
 	} else
 		running = false;
@@ -132,7 +131,6 @@ function step(timestamp) {
 function updateScene() {
 	kernelIterations = 1;
 	currentSample = 0;
-	currentSphere = 0;
 	resetStats();
 
 	clQueue.enqueueWriteBuffer(clSphereBuffer, true, 0, scene.getSpheresBufferSizeInBytes(),
@@ -142,7 +140,6 @@ function updateScene() {
 function updateCamera() {
 	kernelIterations = 1;
 	currentSample = 0;
-	currentSphere = 0;
 	resetStats();
 	
 	scene.getCamera().update(canvas.width, canvas.height);
@@ -193,6 +190,7 @@ function resolutionChanged(resolution) {
 
 function sceneChanged(name) {
 	running = false;
+	currentSphere = 0;
 
 	sceneName = name;
 
@@ -205,23 +203,27 @@ function keyFunc(event) {
 	var key = event.keyCode;
 	var MOVE_STEP = 10.0;
 	var ROTATE_STEP = 2.0 * M_PI / 180.0;
-	
+
 	var up = 38;
 	var down = 40;
 	var left = 39;
 	var right = 37;
 	
 	var two = 50;
+	var twoKeypad = 98;
 	var three = 51;
+	var threeKeypad = 99;
 	var four = 52;
-	var five = 53;
+	var fourKeypad = 100;
 	var six = 54;
-	var seven = 55;
+	var sixKeypad = 102;
 	var eight = 56;
+	var eightKeypad = 104;
 	var nine = 57;
+	var nineKeypad = 105;
 	
-	var plus = 107;
-	var minus = 109;
+	var plus = 77;
+	var minus = 78;
 	
 	var w = 87;
 	var a = 65;
@@ -320,42 +322,46 @@ function keyFunc(event) {
 			updateCamera();
 			break;
 		case four:
+		case fourKeypad:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[0] -= 0.5 * MOVE_STEP;
-			UpdateScene(); 
+			updateScene();
 			break;
 		case six:
+		case sixKeypad:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[0] += 0.5 * MOVE_STEP;
-			UpdateScene(); 
+			updateScene(); 
 			break;
 		case eight:
+		case eightKeypad:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[2] -= 0.5 * MOVE_STEP;
-			UpdateScene(); 
+			updateScene(); 
 			break;
 		case two:
+		case twoKeypad:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[2] += 0.5 * MOVE_STEP;
-			UpdateScene(); 
+			updateScene(); 
 			break;
 		case nine:
+		case nineKeypad:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[1] += 0.5 * MOVE_STEP;
-			UpdateScene(); 
+			updateScene(); 
 			break;
 		case three:
+		case threeKeypad:
 			var sArray = scene.getSpheres();
 			sArray[currentSphere].p[1] -= 0.5 * MOVE_STEP;
-			UpdateScene(); 
+			updateScene(); 
 			break;
 		case plus:
 			currentSphere = (currentSphere + 1) % scene.spheres.length;
-			UpdateScene();
 			break;
 		case minus:
 			currentSphere = (currentSphere + (scene.spheres.length - 1)) % scene.spheres.length;
-			UpdateScene();
 			break;
 		default:
 			break;
@@ -556,7 +562,7 @@ function updateRendering() {
 
 	var elapsedTime = t1 -t0;
 	clTime = clTime * 0.95 + 0.05 * elapsedTime;
-	if (elapsedTime < 50)
+	if (elapsedTime < 30)
 		kernelIterations++;
 	else {
 		kernelIterations = Math.max(--kernelIterations, 1);
@@ -567,7 +573,8 @@ function updateRendering() {
 	
 	htmlConsole.innerHTML += "<br>Pass: " + currentSample +
 		"<br>Sample/sec: " + (sampleSec / 1000.0).toFixed(2) + "M" +
-		"<br>Iterations per step: " + kernelIterations + "\n";
+		"<br>Iterations per step: " + kernelIterations +
+		"<br>Current sphere: " + currentSphere + "\n";
 	
 	drawPixels();
 } 
