@@ -3,6 +3,7 @@
 ^mandelgpu/mandelgpu$
 ^juliagpu/juliagpu$
 ^smallptgpu/smallptgpu$
+^jugCLer/jugCLer$
 ^.dep.inc
 syntax: glob
 *~

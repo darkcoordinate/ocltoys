@@ -110,7 +110,6 @@ protected:
 	//--------------------------------------------------------------------------
 
 	virtual void DisplayCallBack() {
-		glClear(GL_COLOR_BUFFER_BIT);
 		glRasterPos2i(0, 0);
 		if (selectedDevices.size() == 1)
 			glDrawPixels(windowWidth, windowHeight, GL_RGB, GL_FLOAT, pixels[0]);
@@ -492,7 +491,7 @@ private:
 			kernelsSmallPT[i]->getWorkGroupInfo<size_t>(oclDevice, CL_KERNEL_WORK_GROUP_SIZE, &kernelsWorkGroupSize[i]);
 			if (commandLineOpts.count("workgroupsize"))
 				kernelsWorkGroupSize[i] = commandLineOpts["workgroupsize"].as<size_t>();
-			OCLTOY_LOG("Using workgroup size  (Device " + boost::lexical_cast<std::string>(i) + "): " << kernelsWorkGroupSize[i]);
+			OCLTOY_LOG("Using workgroup size (Device " + boost::lexical_cast<std::string>(i) + "): " << kernelsWorkGroupSize[i]);
 
 			if ((selectedDevices.size() == 1) && (i == 0))
 				kernelToneMapping = new cl::Kernel(program, "ToneMapping");

@@ -72,7 +72,6 @@ protected:
 	virtual void DisplayCallBack() {
 		UpdateMandel();
 
-		glClear(GL_COLOR_BUFFER_BIT);
 		glRasterPos2i(0, 0);
 		glDrawPixels(windowWidth, windowHeight, GL_LUMINANCE, GL_UNSIGNED_BYTE, pixels);
 
