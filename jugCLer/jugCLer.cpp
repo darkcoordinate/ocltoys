@@ -21,6 +21,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <boost/format.hpp>
 
 #include "ocltoy.h"
 
@@ -111,7 +112,7 @@ protected:
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glColor4f(0.f, 0.f, 0.f, 0.8f);
-		glRecti(0, windowHeight - 15,
+		glRecti(0, windowHeight - 30,
 				windowWidth - 1, windowHeight - 1);
 		glRecti(0, 0, windowWidth - 1, 18);
 		glDisable(GL_BLEND);
@@ -119,26 +120,19 @@ protected:
 		// Title
 		glColor3f(1.f, 1.f, 1.f);
 		glRasterPos2i(4, windowHeight - 10);
-		PrintString(GLUT_BITMAP_8_BY_13, "jugCLer 1.0 by Holger Bettag (hobold@vectorizer.org)");
-		glRasterPos2i(4, windowHeight - 20);
+		PrintString(GLUT_BITMAP_8_BY_13, "JugCLer 1.0 by Holger Bettag (hobold@vectorizer.org)");
+		glRasterPos2i(4, windowHeight - 25);
 		PrintString(GLUT_BITMAP_8_BY_13, "Heavily inspired by Michael Birken's"
 				" reverse engineering of Eric Graham's original Amiga"
 				" juggler demo");
 
-//		// Caption line 0
-//		double globalSampleSec = 0.0;
-//		unsigned int globalPass = 0;
-//		for (unsigned int i = 0; i < selectedDevices.size(); ++i) {
-//			globalSampleSec += sampleSec[i];
-//			globalPass += currentSample[i] + 1;
-//		}
-//		
-//		const std::string captionString = boost::str(boost::format("[Pass %d][%.1fM Sample/sec]") %
-//				globalPass % (globalSampleSec / 1000000.0));
-//
-//		glColor3f(1.f, 1.f, 1.f);
-//		glRasterPos2i(4, 5);
-//		PrintString(GLUT_BITMAP_8_BY_13, captionString.c_str());
+		// Caption line 0
+		const std::string captionString = boost::str(boost::format("[60Hz screen refresh][No-Vsync %.1f Frame/sec][%.1fM Sample/sec]") %
+				frameSec % (frameSec * windowWidth * windowHeight / 1000000.0));
+
+		glColor3f(1.f, 1.f, 1.f);
+		glRasterPos2i(4, 5);
+		PrintString(GLUT_BITMAP_8_BY_13, captionString.c_str());
 
 		if (printHelp) {
 			glPushMatrix();
@@ -195,9 +189,9 @@ protected:
 					for (int y = windowHeight - 1; y >= 0; --y) {
 						const PixelRGBA8888 *p = &bitmap->pixels[y * windowWidth];
 						for (int x = 0; x < windowWidth; ++x, p++) {
-							const std::string r = boost::lexical_cast<std::string>(p->r);
-							const std::string g = boost::lexical_cast<std::string>(p->g);
-							const std::string b = boost::lexical_cast<std::string>(p->b);
+							const std::string r = boost::lexical_cast<std::string>((unsigned int)p->r);
+							const std::string g = boost::lexical_cast<std::string>((unsigned int)p->g);
+							const std::string b = boost::lexical_cast<std::string>((unsigned int)p->b);
 							f << r << " " << g << " " << b << std::endl;
 						}
 					}
@@ -214,6 +208,13 @@ protected:
 				OCLTOY_LOG("Done");
 
 				exit(EXIT_SUCCESS);
+				break;
+			case ' ': // Restart rendering
+				sceneTimeOffset = WallClockTime();
+				setupAnim(scene, windowWidth, windowHeight);
+				break;
+			case 'h':
+				printHelp = (!printHelp);
 				break;
 			default:
 				needRedisplay = false;
@@ -276,7 +277,7 @@ private:
 		const double t1 = WallClockTime();
 
 		// A simple trick to smooth sample/sec value
-		const double k = 0.05;
+		const double k = 0.01;
 		frameSec = (1.0 - k) * frameSec + k * (1.0 / (t1 -t0));
 	}
 
@@ -369,6 +370,7 @@ private:
 		fontOffset -= 17;
 		PrintHelpString(60, fontOffset, "2, 3, 4, 5, 6, 8, 9", "to move selected object");
 		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "p", "save image.ppm");
 
 		glDisable(GL_BLEND);
 	}

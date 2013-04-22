@@ -295,26 +295,13 @@ __kernel
 void render_gpu(__global const struct Scene* restrict scene, __global uchar4* restrict Image) {
 	const int imgWidth = scene->cam.imgWidth;
 	const int imgHeight = scene->cam.imgHeight;
-	const int gid = get_global_id(0);
-	// round down to multiple of 16
-	const int stripeLimit = (imgWidth & -16)*16 * imgHeight;
-	const int colBlock = imgHeight * 16;
 
-	int x, y;
-	if (gid < stripeLimit) {
-		// re-order pixels for better 2D locality
-		x = (gid / colBlock)*16; // round down to start of column block
-		y = gid - x*imgHeight;
-		x += (y & 15);
-		y = y >> 4;
-	} else {
-		// do the rightmost pixels column by column
-		x = gid / imgHeight;
-		y = gid % imgHeight;
-	}
-	if (x >= imgWidth) {
+	const int gid = get_global_id(0);
+	if (gid > imgWidth * imgHeight)
 		return;
-	}
+
+	const int x = gid % imgWidth;
+	const int y = gid / imgWidth;
 
 	// trace the ray through that pixel
 	struct Ray ray = camMakePrimaryRay(&(scene->cam), x, y);

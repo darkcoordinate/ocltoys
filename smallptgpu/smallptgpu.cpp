@@ -849,6 +849,8 @@ private:
 		fontOffset -= 17;
 		PrintHelpString(60, fontOffset, "2, 3, 4, 5, 6, 8, 9", "to move selected object");
 		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "p", "save image.ppm");
+		fontOffset -= 17;
 
 		// Print device specific information
 		glColor3f(1.f, .5f, 0.f);

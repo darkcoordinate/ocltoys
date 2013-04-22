@@ -28,9 +28,11 @@
  *  animation routines  *
  ************************/
 
+double sceneTimeOffset = WallClockTime();
+
 // move camera
 void updateCamera(Scene* scene) {
-  double time = WallClockTime();
+  double time = WallClockTime() - sceneTimeOffset;
   double rtime = (time/21.35634);  // camera rotation time
   rtime = rtime - floor(rtime);
 
@@ -139,7 +141,7 @@ void animatePositions(Scene* scene) {
 
   const float HIPS_ANGLE_MULTIPLIER = 2.0f * M_PI / 30.0f;
 
-  double time = WallClockTime();
+  double time = WallClockTime() - sceneTimeOffset;
   time -= floor(time);
 
   // mirrored juggling balls

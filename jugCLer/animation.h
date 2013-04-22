@@ -24,6 +24,8 @@
 
 #include "scene.h"
 
+extern double sceneTimeOffset;
+
 // compute scene state for current time
 void animatePositions(Scene* scene);
 
