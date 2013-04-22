@@ -44,14 +44,18 @@ struct Camera {
 
 struct Ray camMakePrimaryRay(__global const struct Camera* restrict c,
 		const int x, const int y) {
+	const int imgWidth = c->imgWidth;
+	const int imgHeight = c->imgHeight;
+	const float ratio = imgWidth / (float)imgHeight;
+
 	// start from relative pixel coordinates in [0.0 .. 1.0]
 	// with y axis pointing down, pixel center is at (+0.5, +0.5)
-	float fx = ((float) x + 0.5f) / (float) c->imgWidth;
-	float fy = ((float) y + 0.5f) / (float) c->imgHeight;
+	float fx = ((float) x + 0.5f) / imgWidth;
+	float fy = ((float) y + 0.5f) / imgHeight;
 
 	// map to [-1.0 .. 1.0], with y axis pointing down, because ...
 	// ... GLUT y-flips the bitmap later on
-	fx = 2.0f * fx - 1.0f;
+	fx = (2.0f * fx - 1.0f) * ratio;
 	fy = 2.0f * fy - 1.0f;
 
 	// ray direction is from eye to that point in view rect  

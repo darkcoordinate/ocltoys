@@ -62,6 +62,7 @@ public:
 
 		bitmap = NULL;
 		scene = NULL;
+		animCamera = true;
 		pixelsBuff = NULL;
 		sceneBuff = NULL;
 
@@ -172,6 +173,8 @@ protected:
 		glutPostRedisplay();
 	}
 
+#define MOVE_STEP 0.4f
+#define ROTATE_STEP (2.f * ((float)M_PI) / 180.f)
 	virtual void KeyCallBack(unsigned char key, int x, int y) {
 		bool needRedisplay = true;
 
@@ -210,12 +213,61 @@ protected:
 				exit(EXIT_SUCCESS);
 				break;
 			case ' ': // Restart rendering
+				animCamera = true;
 				sceneTimeOffset = WallClockTime();
 				setupAnim(scene, windowWidth, windowHeight);
 				break;
 			case 'h':
 				printHelp = (!printHelp);
 				break;
+			case 'a': {
+				animCamera = false;
+				cl_float3 dir = scene->cam.viewRight;
+				vecNormalize(dir);
+				vecScale(dir, -MOVE_STEP);
+				camMove(scene->cam, dir);
+				break;
+			}
+			case 'd': {
+				animCamera = false;
+				cl_float3 dir = scene->cam.viewRight;
+				vecNormalize(dir);
+				vecScale(dir, MOVE_STEP);
+				camMove(scene->cam, dir);
+				break;
+			}
+			case 'w': {
+				animCamera = false;
+				cl_float3 dir = scene->cam.viewCenter;
+				vecSub(dir, scene->cam.eye);
+				vecNormalize(dir);
+				vecScale(dir, MOVE_STEP);
+				camMove(scene->cam, dir);
+				break;
+			}
+			case 's': {
+				animCamera = false;
+				cl_float3 dir = scene->cam.viewCenter;
+				vecSub(dir, scene->cam.eye);
+				vecNormalize(dir);
+				vecScale(dir, -MOVE_STEP);
+				camMove(scene->cam, dir);
+				break;
+			}
+			case 'r': {
+				animCamera = false;
+				cl_float3 dir;
+				vecInit(dir, 0.f, MOVE_STEP, 0.f);
+				camMove(scene->cam, dir);
+				break;
+			}
+			case 'f': {
+				animCamera = false;
+				cl_float3 dir;
+				vecInit(dir, 0.f, -MOVE_STEP, 0.f);
+				camMove(scene->cam, dir);
+				break;
+			}
 			default:
 				needRedisplay = false;
 				break;
@@ -226,10 +278,56 @@ protected:
 	}
 
 	void SpecialCallBack(int key, int x, int y) {
+		bool needRedisplay = true;
+
+        switch (key) {
+			case GLUT_KEY_LEFT: {
+				animCamera = false;
+				cl_float3 t = scene->cam.viewCenter;
+				vecSub(t,  scene->cam.eye);
+				t.s[0] = t.s[0] * cosf(-ROTATE_STEP) - t.s[2] * sinf(-ROTATE_STEP);
+				t.s[2] = t.s[0] * sinf(-ROTATE_STEP) + t.s[2] * cosf(-ROTATE_STEP);
+				vecAdd(t, scene->cam.eye);
+				camLookAt(scene->cam, t);
+				break;
+			}
+			case GLUT_KEY_RIGHT: {
+				animCamera = false;
+				cl_float3 t = scene->cam.viewCenter;
+				vecSub(t,  scene->cam.eye);
+				t.s[0] = t.s[0] * cosf(ROTATE_STEP) - t.s[2] * sinf(ROTATE_STEP);
+				t.s[2] = t.s[0] * sinf(ROTATE_STEP) + t.s[2] * cosf(ROTATE_STEP);
+				vecAdd(t, scene->cam.eye);
+				camLookAt(scene->cam, t);
+				break;
+			}
+			case GLUT_KEY_PAGE_UP: {
+				animCamera = false;
+				cl_float3 t;
+				vecInit(t, 0.f, MOVE_STEP / 4.f, 0.f);
+				vecAdd(scene->cam.viewCenter, t);
+				camUpdate(scene->cam);
+				break;
+			}
+			case GLUT_KEY_PAGE_DOWN: {
+				animCamera = false;
+				cl_float3 t;
+				vecInit(t, 0.f, -MOVE_STEP / 4.f, 0.f);
+				vecAdd(scene->cam.viewCenter, t);
+				camUpdate(scene->cam);
+				break;
+			}
+			default:
+				needRedisplay = false;
+				break;
+		}
+
+		if (needRedisplay)
+			glutPostRedisplay();
 	}
 
 	void TimerCallBack(int id) {
-		animatePositions(scene);
+		animatePositions(scene, animCamera);
 
 		glutPostRedisplay();
 
@@ -356,7 +454,7 @@ private:
 		fontOffset -= 30;
 		PrintHelpString(60, fontOffset, "h", "toggle Help");
 		fontOffset -= 17;
-		PrintHelpString(60, fontOffset, "arrow Keys", "rotate camera left/right/up/down");
+		PrintHelpString(60, fontOffset, "arrow Keys", "rotate camera left/right");
 		fontOffset -= 17;
 		PrintHelpString(60, fontOffset, "a and d", "move camera left and right");
 		fontOffset -= 17;
@@ -366,17 +464,16 @@ private:
 		fontOffset -= 17;
 		PrintHelpString(60, fontOffset, "PageUp and PageDown", "move camera target up and down");
 		fontOffset -= 17;
-		PrintHelpString(60, fontOffset, "+ and -", "to select next/previous object");
-		fontOffset -= 17;
-		PrintHelpString(60, fontOffset, "2, 3, 4, 5, 6, 8, 9", "to move selected object");
-		fontOffset -= 17;
 		PrintHelpString(60, fontOffset, "p", "save image.ppm");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "space", "restart animation");
 
 		glDisable(GL_BLEND);
 	}
 
 	Bitmap *bitmap; // image for display
-	Scene *scene; 
+	Scene *scene;
+	bool animCamera;
 
 	cl::Buffer *pixelsBuff;
 	cl::Buffer *sceneBuff;

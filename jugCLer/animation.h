@@ -27,7 +27,7 @@
 extern double sceneTimeOffset;
 
 // compute scene state for current time
-void animatePositions(Scene* scene);
+void animatePositions(Scene* scene, const bool updateCamera);
 
 // initialize scene state
 void setupAnim(Scene* scene, int imgWidth, int imgHeight);

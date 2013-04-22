@@ -21,43 +21,47 @@
 
 #include "scene.h"
 
-void camInit(Camera& c) {  // default initialization
-  vecInit(c.eye, 0.0f, 0.0f, 3.0f);        // 3 units in front of screen
-  vecInit(c.sky, 0.0f, 1.0f, 0.0f);        // sky, used to align viewUp
-  vecInit(c.viewCenter, 0.0f, 0.0f, 0.0f); // screen center at origin
-  vecInit(c.viewRight, 1.6f, 0.0f, 0.0f);  // to right edge of 16:10 screen
-  vecInit(c.viewUp, 0.0f, 1.0f, 0.0f);     // to top edge of 16:10 screen
+void camInit(Camera& c) { // default initialization
+	vecInit(c.eye, 0.0f, 0.0f, 3.0f); // 3 units in front of screen
+	vecInit(c.sky, 0.0f, 1.0f, 0.0f); // sky, used to align viewUp
+	vecInit(c.viewCenter, 0.0f, 0.0f, 0.0f); // screen center at origin
+	camUpdate(c);
 }
 
 // translate camera position
 // does not maintain point of interest, may need to lookAt() afterwards
+
 void camMove(Camera& c, const cl_float3& translation) {
-  vecAdd(c.eye, translation);
-  vecAdd(c.viewCenter, translation);
+	vecAdd(c.eye, translation);
+	vecAdd(c.viewCenter, translation);
 }
 
 // aim camera at point of interest
+
 void camLookAt(Camera& c, const cl_float3& poi) {
-  // first derive some invariant scalar measures of the current camera
-  cl_float3 forward = c.viewCenter;
-  vecSub(forward, c.eye);
-  float viewWidth = vecLength(c.viewRight);
-  float viewHeight = vecLength(c.viewUp);
-  float distance = vecLength(forward);
-  
-  // now rebuild the camera
-  forward = poi;
-  vecSub(forward, c.eye);
-  vecNormalize(forward);
-  vecScale(forward, distance);
-  c.viewCenter = c.eye;
-  vecAdd(c.viewCenter, forward);          // from eye towards point of interest
-  
-  vecCross(c.viewRight, forward, c.sky);    // horizon is perpendicular to sky
-  vecNormalize(c.viewRight);
-  vecScale(c.viewRight, viewWidth);
-  
-  vecCross(c.viewUp, c.viewRight, forward); // perpendicular 2 horizon & forward
-  vecNormalize(c.viewUp);
-  vecScale(c.viewUp, viewHeight);
+	// first derive some invariant scalar measures of the current camera
+	cl_float3 forward = c.viewCenter;
+	vecSub(forward, c.eye);
+	float distance = vecLength(forward);
+
+	// now rebuild the camera
+	forward = poi;
+	vecSub(forward, c.eye);
+	vecNormalize(forward);
+	vecScale(forward, distance);
+	c.viewCenter = c.eye;
+	vecAdd(c.viewCenter, forward); // from eye towards point of interest
+
+	camUpdate(c);
+}
+
+void camUpdate(Camera& c) {
+	cl_float3 forward = c.viewCenter;
+	vecSub(forward, c.eye);
+
+	vecCross(c.viewRight, forward, c.sky); // horizon is perpendicular to sky
+	vecNormalize(c.viewRight);
+
+	vecCross(c.viewUp, c.viewRight, forward); // perpendicular 2 horizon & forward
+	vecNormalize(c.viewUp);
 }

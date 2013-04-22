@@ -413,6 +413,7 @@ protected:
 				cameraUpdated = true;
 				break;
 			default:
+				needRedisplay = false;
 				break;
 		}
 
@@ -850,6 +851,8 @@ private:
 		PrintHelpString(60, fontOffset, "2, 3, 4, 5, 6, 8, 9", "to move selected object");
 		fontOffset -= 17;
 		PrintHelpString(60, fontOffset, "p", "save image.ppm");
+		fontOffset -= 17;
+		PrintHelpString(60, fontOffset, "space", "restart rendering");
 		fontOffset -= 17;
 
 		// Print device specific information
