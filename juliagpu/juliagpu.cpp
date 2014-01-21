@@ -608,7 +608,7 @@ private:
 		OCLTOY_LOG("Compile OpenCL kernel: " << kernelFileName);
 
 		// Read the kernel
-		const std::string kernelSource = ReadSources(kernelFileName);
+		const std::string kernelSource = ReadSources(kernelFileName, "juliagpu");
 
 		// Create the kernel program
 		cl::Device &oclDevice = selectedDevices[0];

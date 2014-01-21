@@ -20,11 +20,13 @@
  ***************************************************************************/
 
 #include <fstream>
-#include <boost/lexical_cast.hpp>
 #include <stdexcept>
+#include <boost/lexical_cast.hpp>
+#include <boost/filesystem.hpp>
 
 #include "opencl.h"
 #include "utils.h"
+#include "version.h"
 
 // Helper function to get error string
 std::string OCLErrorString(cl_int error) {
@@ -177,17 +179,31 @@ void PrintHelpString(const unsigned int x, const unsigned int y,
 	PrintString(GLUT_BITMAP_9_BY_15, msg);
 }
 
-std::string ReadSources(const std::string &fileName) {
-	std::ifstream ifs(fileName.c_str());
-	if (!ifs.good())
-		throw std::runtime_error("Error while opening file: " + fileName);
+std::string ReadSources(const std::string &fileName, const std::string &toolName) {
+    // Check if the sources are in the current directory
+    std::string fileFullPath = fileName;
+    if (!boost::filesystem::exists(fileFullPath)) {
+        // May be, they are inside the package directory
+        fileFullPath = std::string(PACKAGE_DATADIR) +
+	               std::string(toolName) + std::string("/") +
+	               std::string(fileName);
 
-	std::string content((std::istreambuf_iterator<char>(ifs)),
-			(std::istreambuf_iterator<char>()));	
-	if (!ifs.good())
-		throw std::runtime_error("Error while reading file: " + fileName);
+        if (!boost::filesystem::exists(fileFullPath)) {
+            // Ok, time to give up
+            throw std::runtime_error("File doesn't exist: " + fileName);
+        }
+    }
 
-	ifs.close();
+    std::ifstream ifs(fileFullPath.c_str());
+    if (!ifs.good())
+        throw std::runtime_error("Error while opening file: " + fileName);
 
-	return content;
+    std::string content((std::istreambuf_iterator<char>(ifs)),
+            (std::istreambuf_iterator<char>()));
+    if (!ifs.good())
+        throw std::runtime_error("Error while reading file: " + fileName);
+
+    ifs.close();
+
+    return content;
 }

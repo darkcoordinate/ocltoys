@@ -27,4 +27,6 @@
 #define OCLTOYS_VERSION_MAJOR "1"
 #define OCLTOYS_VERSION_MINOR "0"
 
+#define PACKAGE_DATADIR "./"
+
 #endif	/* _OCLTOYS_CFG_H */

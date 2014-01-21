@@ -455,7 +455,7 @@ private:
 		OCLTOY_LOG("Compile OpenCL kernel: " << kernelFileName);
 
 		// Read the kernel
-		const std::string kernelSource = ReadSources(kernelFileName);
+		const std::string kernelSource = ReadSources(kernelFileName, "smallptgpu");
 
 		// Kernel options
 		std::stringstream ss;
@@ -545,7 +545,21 @@ private:
 	void ReadScene(const std::string &fileName) {
 		OCLTOY_LOG("Reading scene: " << fileName);
 
-		std::ifstream f(fileName.c_str(), std::ifstream::in | std::ifstream::binary);
+        // Check if the scene is in the current directory
+        std::string fileFullPath = fileName;
+        if (!boost::filesystem::exists(fileFullPath)) {
+            // May be, they are inside the package directory
+            fileFullPath = std::string(PACKAGE_DATADIR) +
+                       std::string("smallptgpu") + std::string("/") +
+                       std::string(fileName);
+
+            if (!boost::filesystem::exists(fileFullPath)) {
+                // Ok, time to give up
+                throw std::runtime_error("File doesn't exist: " + fileName);
+            }
+        }
+
+		std::ifstream f(fileFullPath.c_str(), std::ifstream::in | std::ifstream::binary);
 		if (!f.good())
 			throw std::runtime_error("Failed to open file: " + fileName);
 
